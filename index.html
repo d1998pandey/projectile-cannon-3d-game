@@ -125,7 +125,7 @@
       position: absolute;
       top: 14px;
       right: 14px;
-      width: 300px;
+      width: 305px;
       background: var(--panel);
       backdrop-filter: blur(12px);
       border: 1px solid var(--border);
@@ -133,7 +133,7 @@
       padding: 15px;
       display: flex;
       flex-direction: column;
-      gap: 13px;
+      gap: 12px;
       z-index: 10;
       max-height: calc(100vh - 85px);
       overflow-y: auto;
@@ -150,12 +150,12 @@
     .ctrl-block {
       display: flex;
       flex-direction: column;
-      gap: 5px;
+      gap: 4px;
     }
     .ctrl-label {
       display: flex;
       justify-content: space-between;
-      font-size: 0.82rem;
+      font-size: 0.81rem;
       font-weight: 600;
     }
     .mono-val {
@@ -310,7 +310,7 @@
 
     @media (max-width: 900px) {
       .challenge-hud { width: 92vw; max-width: 92vw; }
-      .controls-hud { top: auto; bottom: 64px; width: 92vw; right: 4vw; max-height: 44vh; }
+      .controls-hud { top: auto; bottom: 64px; width: 92vw; right: 4vw; max-height: 46vh; }
       .telemetry-strip { display: none; }
     }
   </style>
@@ -383,6 +383,15 @@
         <input type="range" id="slSpeed" min="5" max="50" step="0.5" value="25" oninput="updateCannonAim(true)">
       </div>
 
+      <!-- NEW: Cannon Cliff / Platform Height Adjustor -->
+      <div class="ctrl-block">
+        <div class="ctrl-label">
+          <span>Cliff Height (y₀)</span>
+          <span class="mono-val" id="lblCliff" style="color:#fbbf24;">0.0 m</span>
+        </div>
+        <input type="range" id="slCliff" min="0" max="50" step="1" value="0" oninput="updateCannonAim(true)">
+      </div>
+
       <div class="fire-row">
         <button class="btn-fire" data-no-click-sound="true" onclick="fireCannon(false)">🔥 FIRE</button>
         <button onclick="resetShot()">↺ RESET</button>
@@ -422,11 +431,12 @@
     <div class="fb-left">
       <span class="status-badge" id="shotStatusBadge">Ready to Fire</span>
       <span class="fb-explanation" id="shotExplanation">
-        Adjust Launch Angle θ and Initial Velocity v₀, then press FIRE to test your trajectory.
+        Adjust Launch Angle θ, Initial Velocity v₀, or Cliff Height y₀, then press FIRE!
       </span>
     </div>
 
     <div class="telemetry-strip">
+      <span>y₀: <b id="roY0">0.0 m</b></span>
       <span>H_max: <b id="roH">-- m</b></span>
       <span>Range R: <b id="roR">-- m</b></span>
       <span>Time T: <b id="roT">-- s</b></span>
@@ -444,9 +454,10 @@
     const state = {
       theta: 45,          // degrees
       v0: 25.0,           // m/s
-      y0: 0.0,            // platform elevation (m)
+      y0: 0.0,            // cliff / platform elevation (m)
       prevTheta: null,
       prevV0: null,
+      prevY0: null,
       difficulty: 'beginner',
       solvedCount: 0,
       presetIdx: 0,
@@ -479,7 +490,6 @@
         }
       },
 
-      // 1. Crisp UI Button Click
       playClick(freq = 620) {
         if (!state.soundEnabled) return;
         this.init();
@@ -498,11 +508,10 @@
         osc.stop(now + 0.04);
       },
 
-      // 2. Mechanical Gear Tick when moving Angle or Velocity Sliders
       playSliderTick(pitchFactor = 1.0) {
         if (!state.soundEnabled) return;
         const nowMs = performance.now();
-        if (nowMs - this.lastTickTime < 40) return; // Throttle ticks
+        if (nowMs - this.lastTickTime < 40) return;
         this.lastTickTime = nowMs;
 
         this.init();
@@ -520,14 +529,12 @@
         osc.stop(now + 0.025);
       },
 
-      // 3. Cannon Launch Explosion (Low Sub-Bass Punch + Filtered Noise Burst)
       playLaunch() {
         if (!state.soundEnabled) return;
         this.init();
         if (!this.ctx) return;
         const now = this.ctx.currentTime;
 
-        // Low-end thump oscillator
         const osc = this.ctx.createOscillator();
         const oscGain = this.ctx.createGain();
         osc.type = 'sine';
@@ -540,7 +547,6 @@
         osc.start(now);
         osc.stop(now + 0.45);
 
-        // Explosive white noise burst
         const bufSize = Math.floor(this.ctx.sampleRate * 0.45);
         const noiseBuf = this.ctx.createBuffer(1, bufSize, this.ctx.sampleRate);
         const data = noiseBuf.getChannelData(0);
@@ -565,7 +571,6 @@
         noise.start(now);
       },
 
-      // 4. Continuous Trajectory Whistle & Air Whoosh During Flight
       startFlightSound() {
         this.stopFlightSound();
         if (!state.soundEnabled) return;
@@ -573,7 +578,6 @@
         if (!this.ctx) return;
         const now = this.ctx.currentTime;
 
-        // Projectile whistle oscillator
         this.flightOsc = this.ctx.createOscillator();
         this.flightGain = this.ctx.createGain();
         this.flightOsc.type = 'sine';
@@ -584,7 +588,6 @@
         this.flightGain.connect(this.ctx.destination);
         this.flightOsc.start(now);
 
-        // Looping wind whoosh noise
         const bufSize = this.ctx.sampleRate * 2;
         const noiseBuf = this.ctx.createBuffer(1, bufSize, this.ctx.sampleRate);
         const out = noiseBuf.getChannelData(0);
@@ -611,7 +614,6 @@
       updateFlightSound(speed, vy, height) {
         if (!this.flightOsc || !this.ctx || !state.soundEnabled) return;
         const now = this.ctx.currentTime;
-        // Whistle pitch rises with height and shifts with vertical velocity vy
         const pitch = Math.max(180, Math.min(950, 340 + height * 4.5 + vy * 3.5));
         this.flightOsc.frequency.setTargetAtTime(pitch, now, 0.04);
         if (this.windFilter) {
@@ -631,7 +633,6 @@
         }
       },
 
-      // 5. Ground Landing Impact + Mission Result Chime
       playLand(isSuccess) {
         this.stopFlightSound();
         if (!state.soundEnabled) return;
@@ -639,7 +640,6 @@
         if (!this.ctx) return;
         const now = this.ctx.currentTime;
 
-        // Ground impact thud
         const osc = this.ctx.createOscillator();
         const gain = this.ctx.createGain();
         osc.type = 'sine';
@@ -652,7 +652,6 @@
         osc.start(now);
         osc.stop(now + 0.25);
 
-        // Celebratory chime if mission succeeded
         if (isSuccess) {
           [523.25, 659.25, 783.99, 1046.5].forEach((freq, idx) => {
             const cOsc = this.ctx.createOscillator();
@@ -671,7 +670,6 @@
       }
     };
 
-    // Global listener for crisp control click sounds on buttons and checkboxes
     document.addEventListener('click', (e) => {
       const btn = e.target.closest('button');
       if (btn && !btn.dataset.noClickSound) {
@@ -765,12 +763,22 @@
     }
     buildAxesAndScales();
 
-    // --- CANNON, PLATFORM & MUZZLE VELOCITY ARROW ---
+    // --- CANNON, ADJUSTABLE CLIFF PLATFORM & MUZZLE VELOCITY ARROW ---
+    const platformGroup = new THREE.Group();
+    scene.add(platformGroup);
+
     const platformMesh = new THREE.Mesh(
-      new THREE.BoxGeometry(8, 1, 8),
-      new THREE.MeshStandardMaterial({ color: 0x334155, roughness: 0.6 })
+      new THREE.BoxGeometry(8.5, 1, 8.5),
+      new THREE.MeshStandardMaterial({ color: 0x334155, roughness: 0.65 })
     );
-    scene.add(platformMesh);
+    platformGroup.add(platformMesh);
+
+    // Top cap rim on cliff so it looks like a proper stone launch pad
+    const cliffCapMesh = new THREE.Mesh(
+      new THREE.BoxGeometry(9.4, 0.8, 9.4),
+      new THREE.MeshStandardMaterial({ color: 0x475569, roughness: 0.5 })
+    );
+    scene.add(cliffCapMesh);
 
     const cannonGroup = new THREE.Group();
     scene.add(cannonGroup);
@@ -887,7 +895,7 @@
       const xApex = vx0 * tApex;
 
       let T = 0;
-      if (y0 === 0) {
+      if (y0 <= 0) {
         T = (2 * vy0) / g;
       } else {
         T = (vy0 + Math.sqrt(vy0 * vy0 + 2 * g * y0)) / g;
@@ -903,10 +911,11 @@
       return { x, y };
     }
 
-    // --- UPDATE CANNON AIM & UI ---
+    // --- UPDATE CANNON AIM, CLIFF HEIGHT & UI ---
     window.updateCannonAim = function(fromSlider = false) {
       state.theta = parseFloat(document.getElementById('slAngle').value);
       state.v0 = parseFloat(document.getElementById('slSpeed').value);
+      state.y0 = parseFloat(document.getElementById('slCliff').value);
 
       if (fromSlider) {
         sfx.playSliderTick(0.8 + (state.theta / 90) * 0.5);
@@ -914,17 +923,24 @@
 
       document.getElementById('lblAngle').textContent = `${state.theta}°`;
       document.getElementById('lblSpeed').textContent = `${state.v0.toFixed(1)} m/s`;
+      document.getElementById('lblCliff').textContent = `${state.y0.toFixed(1)} m`;
+      document.getElementById('roY0').textContent = `${state.y0.toFixed(1)} m`;
 
       const rad = state.theta * Math.PI / 180;
       barrelPivot.rotation.z = rad;
 
+      // Update 3D Cliff Pillar & Cannon elevation y0
       cannonGroup.position.set(0, state.y0, 0);
       if (state.y0 > 0) {
-        platformMesh.visible = true;
+        platformGroup.visible = true;
         platformMesh.scale.set(1, state.y0, 1);
         platformMesh.position.set(0, state.y0 / 2, 0);
+
+        cliffCapMesh.visible = true;
+        cliffCapMesh.position.set(0, state.y0 - 0.4, 0);
       } else {
-        platformMesh.visible = false;
+        platformGroup.visible = false;
+        cliffCapMesh.visible = false;
       }
 
       if (!state.isFlying && state.flightTime === 0) {
@@ -951,7 +967,7 @@
       const y = (-(worldPos.y * 0.5) + 0.5) * canvas.clientHeight;
       badge.style.left = `${x}px`;
       badge.style.top = `${y}px`;
-      badge.textContent = `θ = ${state.theta}° | v₀ = ${state.v0.toFixed(1)} m/s${state.y0 > 0 ? ` | y₀ = ${state.y0}m` : ''}`;
+      badge.textContent = `θ = ${state.theta}° | v₀ = ${state.v0.toFixed(1)} m/s | y₀ = ${state.y0.toFixed(0)}m`;
     }
 
     // --- ACHIEVABLE MISSION GENERATOR ---
@@ -965,7 +981,7 @@
           rangeOk: k.R >= 40,
           otherOk: Math.abs(k.HMax - 20) <= 2.5,
           failReason: Math.abs(k.HMax - 20) > 2.5
-            ? `Maximum height was ${k.HMax.toFixed(1)} m (required 20 m ± 2.5 m). Hint: H depends only on v₀ᵧ = v₀ sin θ!`
+            ? `Maximum height was ${k.HMax.toFixed(1)} m (required 20 m ± 2.5 m). Hint: H_max = y₀ + v₀ᵧ² / 2g!`
             : `Horizontal range was ${k.R.toFixed(1)} m (needed at least 40 m).`
         })
       },
@@ -999,18 +1015,18 @@
         check: (k) => ({
           rangeOk: Math.abs(k.R - 70) <= 5,
           otherOk: Math.abs(k.T - 4.0) <= 0.3,
-          failReason: `Flight time was ${k.T.toFixed(2)} s (required 4.0 s ± 0.3 s). Remember T = 2v₀ sin θ / g!`
+          failReason: `Flight time was ${k.T.toFixed(2)} s (required 4.0 s ± 0.3 s).`
         })
       },
       {
-        title: "Mission 5: The Advanced Challenge",
-        y0: 0,
-        desc: "Hit the target at 100 m (±5 m) while keeping the maximum height strictly below 35 m.",
+        title: "Mission 5: Elevated Cliff Challenge",
+        y0: 20,
+        desc: "From a 20 m cliff (or adjust Cliff Height y₀), hit the target at 100 m (±5 m) while keeping maximum height below 40 m.",
         targetX: 100, tolR: 5,
         check: (k) => ({
           rangeOk: Math.abs(k.R - 100) <= 5,
-          otherOk: k.HMax < 35,
-          failReason: `Ball hit the target range but exceeded the 35 m ceiling (H = ${k.HMax.toFixed(1)} m). Use the lower complementary angle!`
+          otherOk: k.HMax < 40,
+          failReason: `Ball hit the target range but exceeded the 40 m ceiling (H = ${k.HMax.toFixed(1)} m).`
         })
       }
     ];
@@ -1032,7 +1048,7 @@
       const randInt = (min, max) => Math.floor(Math.random() * (max - min + 1)) + min;
       const v0Sol = randInt(18, 42);
       const thSol = randInt(25, 65);
-      const y0 = state.difficulty === 'advanced' && Math.random() > 0.4 ? 15 : 0;
+      const y0 = state.difficulty === 'advanced' ? randInt(10, 35) : 0;
       const sol = calculateKinematics(v0Sol, thSol, y0);
 
       let m;
@@ -1041,7 +1057,7 @@
         m = {
           title: "Beginner: Target Range Mission",
           y0: 0,
-          desc: `Hit the target zone at R = ${sol.R.toFixed(0)} m (±${tol} m). Observe the apex and parabolic path.`,
+          desc: `Hit the target zone at R = ${sol.R.toFixed(0)} m (±${tol} m). You can also experiment with the Cliff Height slider!`,
           targetX: Math.round(sol.R), tolR: tol,
           check: (k) => ({
             rangeOk: Math.abs(k.R - Math.round(sol.R)) <= tol,
@@ -1063,11 +1079,11 @@
           })
         };
       } else {
-        const tolR = 3.5, tolT = 0.35;
+        const tolR = 4.0, tolT = 0.35;
         m = {
-          title: y0 > 0 ? `Advanced: Elevated Platform (y₀ = ${y0} m)` : "Advanced: Precision Flight Time & Range",
+          title: `Advanced: Elevated Cliff (y₀ = ${y0} m)`,
           y0,
-          desc: `${y0 > 0 ? `Launching from a ${y0} m cliff: ` : ''}Hit the narrow target at R = ${sol.R.toFixed(0)} m (±${tolR} m) with flight time T = ${sol.T.toFixed(1)} s (±${tolT} s).`,
+          desc: `Launching from a ${y0} m cliff: Hit the narrow target at R = ${sol.R.toFixed(0)} m (±${tolR} m) with flight time T = ${sol.T.toFixed(1)} s (±${tolT} s).`,
           targetX: Math.round(sol.R), tolR,
           check: (k) => ({
             rangeOk: Math.abs(k.R - Math.round(sol.R)) <= tolR,
@@ -1082,6 +1098,7 @@
     function loadMission(m) {
       state.currentMission = m;
       state.y0 = m.y0 || 0;
+      document.getElementById('slCliff').value = state.y0;
       document.getElementById('missionName').textContent = m.title;
       document.getElementById('missionText').textContent = m.desc;
 
@@ -1120,7 +1137,6 @@
       apexGroup.visible = false;
       landingGroup.visible = false;
 
-      // Trigger Cannon Launch Boom & In-Flight Trajectory Sound!
       sfx.playLaunch();
       sfx.startFlightSound();
     };
@@ -1135,7 +1151,7 @@
     };
 
     window.runMaxRangeDemo = function() {
-      state.y0 = 0;
+      document.getElementById('slCliff').value = 0;
       document.getElementById('chkCompare').checked = true;
       document.getElementById('slSpeed').value = 30;
       document.getElementById('slAngle').value = 75;
@@ -1162,8 +1178,8 @@
 
       if (compareApexSprite) scene.remove(compareApexSprite);
       compareApexSprite = makeTextSprite(
-        `Prev (${shot.theta}°): H=${k.HMax.toFixed(1)}m, R=${k.R.toFixed(1)}m`,
-        '#c084fc', 360, 22
+        `Prev (${shot.theta}°, y₀=${shot.y0}m): H=${k.HMax.toFixed(1)}m, R=${k.R.toFixed(1)}m`,
+        '#c084fc', 380, 21
       );
       compareApexSprite.position.set(k.xApex, k.HMax + 3.5, -0.5);
       scene.add(compareApexSprite);
@@ -1218,13 +1234,13 @@
     // --- PREDICTION QUIZ MODE ---
     const predictionQuestions = [
       {
-        q: "What happens if you increase launch angle θ (from 30° to 60°) while keeping initial speed v₀ constant?",
+        q: "What happens if you increase the Cliff Height y₀ while keeping launch angle θ and speed v₀ constant?",
         opts: [
-          { t: "Maximum height H increases and flight time T increases.", ok: true },
-          { t: "Horizontal velocity vₓ increases.", ok: false },
-          { t: "Flight time T decreases.", ok: false }
+          { t: "Both time of flight T and horizontal range R increase.", ok: true },
+          { t: "Horizontal velocity vₓ increases during flight.", ok: false },
+          { t: "Time of flight T remains unchanged.", ok: false }
         ],
-        explain: "Correct! Increasing θ increases v₀ᵧ = v₀ sin θ, which directly increases both H and T."
+        explain: "Correct! Launching from a higher cliff gives the ball extra vertical distance to fall, increasing flight time T and horizontal distance R = vₓ · T."
       },
       {
         q: "During projectile flight (neglecting air drag), how do the velocity components behave?",
@@ -1253,7 +1269,7 @@
           b.textContent = o.t;
           b.onclick = () => {
             fb.style.color = o.ok ? '#4ade80' : '#f87171';
-            fb.textContent = o.ok ? `✅ ${item.explain}` : `❌ Think about v₀ₓ = v₀ cos θ and v₀ᵧ = v₀ sin θ!`;
+            fb.textContent = o.ok ? `✅ ${item.explain}` : `❌ Think about how y(t) = y₀ + v₀ᵧt − ½gt² affects flight time!`;
           };
           optContainer.appendChild(b);
         });
@@ -1278,6 +1294,7 @@
       landingGroup.add(landingSprite);
       landingGroup.visible = true;
 
+      document.getElementById('roY0').textContent = `${y0.toFixed(1)} m`;
       document.getElementById('roH').textContent = `${kin.HMax.toFixed(1)} m`;
       document.getElementById('roR').textContent = `${kin.R.toFixed(1)} m`;
       document.getElementById('roT').textContent = `${kin.T.toFixed(2)} s`;
@@ -1286,7 +1303,11 @@
 
       let changeNote = '';
       if (state.prevTheta !== null && state.prevV0 !== null) {
-        if (theta > state.prevTheta && v0 === state.prevV0) {
+        if (y0 > state.prevY0) {
+          changeNote = "Cliff height y₀ increased, extending the time of flight T and horizontal range R.";
+        } else if (y0 < state.prevY0) {
+          changeNote = "Cliff height y₀ decreased, reducing total flight time T and horizontal range R.";
+        } else if (theta > state.prevTheta && v0 === state.prevV0) {
           changeNote = "The launch angle increased, so initial vertical velocity v₀ᵧ increased and the ball reached a greater height.";
         } else if (theta < state.prevTheta && v0 === state.prevV0) {
           changeNote = "The launch angle decreased, reducing initial vertical velocity v₀ᵧ, maximum height, and flight time.";
@@ -1298,13 +1319,13 @@
       }
       state.prevTheta = theta;
       state.prevV0 = v0;
+      state.prevY0 = y0;
 
       const res = state.currentMission.check(kin);
       const badge = document.getElementById('shotStatusBadge');
       const exp = document.getElementById('shotExplanation');
       const isComplete = res.rangeOk && res.otherOk;
 
-      // Play landing thud + optional mission complete fanfare
       sfx.playLand(isComplete);
 
       if (isComplete) {
@@ -1323,7 +1344,7 @@
         badge.textContent = '❌ Target Missed';
         const diff = kin.R - state.currentMission.targetX;
         const missStr = diff > 0 ? `Overshot target by ${diff.toFixed(1)} m.` : `Fell short by ${Math.abs(diff).toFixed(1)} m.`;
-        exp.textContent = `${missStr} ${changeNote || 'Adjust θ or v₀ using R = v₀² sin(2θ)/g.'}`;
+        exp.textContent = `${missStr} ${changeNote || 'Adjust θ, v₀, or Cliff Height y₀ to reach the target.'}`;
       }
     }
 
