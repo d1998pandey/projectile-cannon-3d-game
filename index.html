@@ -1,0 +1,1197 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Cannon Physics Challenge — 3D Projectile Motion Game</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <script type="importmap">
+    {
+      "imports": {
+        "three": "https://unpkg.com/three@0.160.0/build/three.module.js",
+        "three/addons/": "https://unpkg.com/three@0.160.0/examples/jsm/"
+      }
+    }
+  </script>
+  <style>
+    :root {
+      --bg: #0b0e14;
+      --panel: rgba(18, 23, 34, 0.90);
+      --border: #283248;
+      --text: #f8fafc;
+      --muted: #94a3b8;
+      --accent: #3b82f6;
+      --fire: #ef4444;
+      --fire-hover: #dc2626;
+      --success: #22c55e;
+      --warn: #f59e0b;
+      --traj1: #38bdf8;
+      --traj2: #a855f7;
+    }
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      font-family: 'Inter', system-ui, sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      width: 100vw;
+      height: 100vh;
+      overflow: hidden;
+      display: flex;
+      flex-direction: column;
+    }
+
+    #game-viewport {
+      position: relative;
+      flex: 1;
+      width: 100%;
+      height: 100%;
+    }
+    #canvas3d {
+      width: 100%;
+      height: 100%;
+      display: block;
+    }
+
+    /* Top Left: Compact Challenge Panel */
+    .challenge-hud {
+      position: absolute;
+      top: 14px;
+      left: 14px;
+      width: 410px;
+      max-width: calc(100vw - 340px);
+      background: var(--panel);
+      backdrop-filter: blur(12px);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 14px 16px;
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+      z-index: 10;
+    }
+    .ch-top {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 8px;
+      flex-wrap: wrap;
+    }
+    .diff-pills {
+      display: flex;
+      gap: 4px;
+      background: #0d111a;
+      padding: 3px;
+      border-radius: 8px;
+      border: 1px solid var(--border);
+    }
+    .diff-btn {
+      background: transparent;
+      border: none;
+      color: var(--muted);
+      padding: 4px 9px;
+      border-radius: 6px;
+      font-size: 0.72rem;
+      font-weight: 700;
+      cursor: pointer;
+    }
+    .diff-btn.active { background: var(--accent); color: #fff; }
+    .mission-title {
+      font-size: 0.88rem;
+      font-weight: 700;
+      color: #60a5fa;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+    .mission-desc {
+      font-size: 0.83rem;
+      line-height: 1.45;
+      color: var(--text);
+      background: rgba(255,255,255,0.04);
+      padding: 9px 11px;
+      border-radius: 8px;
+      border-left: 3px solid var(--accent);
+    }
+    .ch-actions {
+      display: flex;
+      gap: 6px;
+      flex-wrap: wrap;
+    }
+
+    /* Right Side: Minimal Cannon Control Panel */
+    .controls-hud {
+      position: absolute;
+      top: 14px;
+      right: 14px;
+      width: 300px;
+      background: var(--panel);
+      backdrop-filter: blur(12px);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 15px;
+      display: flex;
+      flex-direction: column;
+      gap: 13px;
+      z-index: 10;
+      max-height: calc(100vh - 85px);
+      overflow-y: auto;
+    }
+    .panel-title {
+      font-size: 0.75rem;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.06em;
+      color: var(--muted);
+      border-bottom: 1px solid var(--border);
+      padding-bottom: 6px;
+    }
+    .ctrl-block {
+      display: flex;
+      flex-direction: column;
+      gap: 5px;
+    }
+    .ctrl-label {
+      display: flex;
+      justify-content: space-between;
+      font-size: 0.82rem;
+      font-weight: 600;
+    }
+    .mono-val {
+      font-family: 'JetBrains Mono', monospace;
+      color: var(--traj1);
+      font-weight: 700;
+    }
+    input[type="range"] {
+      width: 100%;
+      accent-color: var(--accent);
+      cursor: pointer;
+    }
+    .fire-row {
+      display: grid;
+      grid-template-columns: 2fr 1fr;
+      gap: 8px;
+      margin-top: 2px;
+    }
+    button {
+      background: #1c2436;
+      color: var(--text);
+      border: 1px solid var(--border);
+      padding: 6px 10px;
+      border-radius: 8px;
+      font-size: 0.76rem;
+      font-weight: 600;
+      cursor: pointer;
+      transition: 0.15s;
+      font-family: inherit;
+    }
+    button:hover { border-color: var(--accent); background: #253047; }
+    button.active { background: var(--accent); border-color: var(--accent); color: #fff; }
+    .btn-fire {
+      background: var(--fire);
+      border-color: var(--fire);
+      color: #fff;
+      font-size: 0.95rem;
+      font-weight: 800;
+      letter-spacing: 0.05em;
+      padding: 11px;
+      box-shadow: 0 4px 16px rgba(239, 68, 68, 0.35);
+    }
+    .btn-fire:hover { background: var(--fire-hover); border-color: var(--fire-hover); }
+
+    .sub-controls {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 6px;
+    }
+    .opt-toggles {
+      display: flex;
+      flex-direction: column;
+      gap: 7px;
+      padding-top: 8px;
+      border-top: 1px solid var(--border);
+      font-size: 0.77rem;
+    }
+    .chk-row {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      cursor: pointer;
+    }
+    .chk-row input { accent-color: var(--accent); width: 15px; height: 15px; cursor: pointer; }
+
+    /* Optional Prediction Modal Box */
+    .prediction-card {
+      position: absolute;
+      bottom: 74px;
+      left: 14px;
+      width: 410px;
+      background: var(--panel);
+      backdrop-filter: blur(12px);
+      border: 1px solid var(--accent);
+      border-radius: 12px;
+      padding: 12px 14px;
+      display: none;
+      flex-direction: column;
+      gap: 8px;
+      z-index: 10;
+    }
+    .pred-opt {
+      text-align: left;
+      padding: 7px 10px;
+      font-size: 0.76rem;
+    }
+
+    /* Post-Shot Physics Feedback Strip */
+    .feedback-bar {
+      height: 58px;
+      background: #0d111a;
+      border-top: 1px solid var(--border);
+      padding: 0 18px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 14px;
+      z-index: 20;
+    }
+    .fb-left {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      overflow: hidden;
+    }
+    .status-badge {
+      padding: 4px 10px;
+      border-radius: 99px;
+      font-size: 0.74rem;
+      font-weight: 700;
+      white-space: nowrap;
+      background: rgba(59,130,246,0.15);
+      color: #60a5fa;
+      border: 1px solid rgba(59,130,246,0.4);
+    }
+    .status-badge.pass { background: rgba(34,197,94,0.18); color: #4ade80; border-color: #22c55e; }
+    .status-badge.warn { background: rgba(245,158,11,0.18); color: #fbbf24; border-color: #f59e0b; }
+    .status-badge.fail { background: rgba(239,68,68,0.18); color: #f87171; border-color: #ef4444; }
+
+    .fb-explanation {
+      font-size: 0.8rem;
+      color: var(--text);
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+    .telemetry-strip {
+      display: flex;
+      gap: 14px;
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 0.75rem;
+      color: var(--muted);
+      white-space: nowrap;
+    }
+    .telemetry-strip b { color: #fff; }
+
+    /* Floating 2D Label beside Cannon */
+    #cannon-badge {
+      position: absolute;
+      pointer-events: none;
+      background: rgba(15, 23, 42, 0.88);
+      border: 1px solid var(--traj1);
+      color: var(--traj1);
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 0.75rem;
+      font-weight: 700;
+      padding: 3px 8px;
+      border-radius: 6px;
+      transform: translate(-50%, -100%);
+      z-index: 5;
+    }
+
+    @media (max-width: 900px) {
+      .challenge-hud { width: 92vw; max-width: 92vw; }
+      .controls-hud { top: auto; bottom: 64px; width: 92vw; right: 4vw; max-height: 44vh; }
+      .telemetry-strip { display: none; }
+    }
+  </style>
+</head>
+<body>
+
+  <div id="game-viewport">
+    <canvas id="canvas3d"></canvas>
+    <div id="cannon-badge">θ = 45° | v₀ = 25 m/s</div>
+
+    <!-- Top-Left Mission & Camera Panel -->
+    <section class="challenge-hud">
+      <div class="ch-top">
+        <div class="diff-pills">
+          <button class="diff-btn active" onclick="setDifficulty('beginner', this)">Beginner</button>
+          <button class="diff-btn" onclick="setDifficulty('intermediate', this)">Intermediate</button>
+          <button class="diff-btn" onclick="setDifficulty('advanced', this)">Advanced</button>
+        </div>
+        <div style="display:flex; gap:5px;">
+          <button onclick="setCameraView('side')">Side 2D View</button>
+          <button onclick="setCameraView('3d')">3D Orbit View</button>
+        </div>
+      </div>
+
+      <div class="mission-title">
+        <span id="missionName">Mission 1: The Range Challenge</span>
+        <span style="font-size:0.74rem; color:var(--muted);" id="streakCounter">Solved: 0</span>
+      </div>
+
+      <div class="mission-desc" id="missionText">
+        Hit the target at a horizontal distance of 60 m.
+      </div>
+
+      <div class="ch-actions">
+        <button onclick="nextMission(false)">↻ New Random Mission</button>
+        <button onclick="cyclePresetMission()">📋 Standard 5 Missions</button>
+        <button onclick="runMaxRangeDemo()" title="Demonstrate 45° max range vs 90° max height">🎯 45° Max Range Demo</button>
+      </div>
+    </section>
+
+    <!-- Optional Prediction Quiz Box -->
+    <section class="prediction-card" id="predictionBox">
+      <div style="font-size:0.75rem; font-weight:700; color:var(--accent); text-transform:uppercase;">
+        Physics Prediction Question (Before Firing)
+      </div>
+      <p id="predQuestionText" style="font-size:0.8rem; font-weight:600;">
+        What happens if you increase the launch angle θ (below 90°) while keeping initial speed v₀ constant?
+      </p>
+      <div style="display:flex; flex-direction:column; gap:5px;" id="predOptions"></div>
+      <div id="predFeedback" style="font-size:0.76rem; font-weight:600;"></div>
+    </section>
+
+    <!-- Right-Side Minimal Cannon Controls -->
+    <aside class="controls-hud">
+      <div class="panel-title">Cannon Controls (g = 9.8 m/s²)</div>
+
+      <div class="ctrl-block">
+        <div class="ctrl-label">
+          <span>Launch Angle (θ)</span>
+          <span class="mono-val" id="lblAngle">45°</span>
+        </div>
+        <input type="range" id="slAngle" min="0" max="90" step="1" value="45" oninput="updateCannonAim()">
+      </div>
+
+      <div class="ctrl-block">
+        <div class="ctrl-label">
+          <span>Initial Velocity (v₀)</span>
+          <span class="mono-val" id="lblSpeed">25.0 m/s</span>
+        </div>
+        <input type="range" id="slSpeed" min="5" max="50" step="0.5" value="25" oninput="updateCannonAim()">
+      </div>
+
+      <div class="fire-row">
+        <button class="btn-fire" onclick="fireCannon(false)">🔥 FIRE</button>
+        <button onclick="resetShot()">↺ RESET</button>
+      </div>
+
+      <div class="sub-controls">
+        <button onclick="replayLastShot()">▶ Replay Shot</button>
+        <button id="btnSlowMo" onclick="toggleSlowMo()">🐢 Slow-Mo: OFF</button>
+      </div>
+
+      <div class="opt-toggles">
+        <label class="chk-row">
+          <span>Compare Two Shots (Keep Previous)</span>
+          <input type="checkbox" id="chkCompare">
+        </label>
+        <button id="btnCompAngle" onclick="fireComplementaryShot()" style="display:none; width:100%;">
+          Fire Complementary Angle (90° − θ)
+        </button>
+        <label class="chk-row">
+          <span>Show Velocity Components (vₓ, vᵧ)</span>
+          <input type="checkbox" id="chkVectors" checked onchange="updateVectorArrowsVisibility()">
+        </label>
+        <label class="chk-row">
+          <span>Prediction Quiz Mode</span>
+          <input type="checkbox" id="chkPredict" onchange="togglePredictionMode(this.checked)">
+        </label>
+      </div>
+    </aside>
+  </div>
+
+  <!-- Bottom Physics Feedback & Telemetry Bar -->
+  <footer class="feedback-bar">
+    <div class="fb-left">
+      <span class="status-badge" id="shotStatusBadge">Ready to Fire</span>
+      <span class="fb-explanation" id="shotExplanation">
+        Adjust Launch Angle θ and Initial Velocity v₀, then press FIRE to test your trajectory.
+      </span>
+    </div>
+
+    <div class="telemetry-strip">
+      <span>H_max: <b id="roH">-- m</b></span>
+      <span>Range R: <b id="roR">-- m</b></span>
+      <span>Time T: <b id="roT">-- s</b></span>
+      <span>v₀ₓ: <b id="roVx">17.7 m/s</b></span>
+      <span>v₀ᵧ: <b id="roVy">17.7 m/s</b></span>
+    </div>
+  </footer>
+
+  <script type="module">
+    import * as THREE from 'three';
+    import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+
+    // --- CONSTANTS & STATE ---
+    const g = 9.8;
+    const state = {
+      theta: 45,          // degrees
+      v0: 25.0,           // m/s
+      y0: 0.0,            // platform elevation (m)
+      prevTheta: null,
+      prevV0: null,
+      difficulty: 'beginner',
+      solvedCount: 0,
+      presetIdx: 0,
+      slowMo: false,
+      isFlying: false,
+      flightTime: 0,
+      totalFlightTime: 0,
+      currentMission: null,
+      lastShotParams: null
+    };
+
+    // --- THREE.JS SCENE INITIALIZATION ---
+    const canvas = document.getElementById('canvas3d');
+    const renderer = new THREE.WebGLRenderer({ canvas, antialias: true });
+    renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+
+    const scene = new THREE.Scene();
+    scene.background = new THREE.Color(0x0b0e14);
+
+    const camera = new THREE.PerspectiveCamera(42, window.innerWidth / window.innerHeight, 0.5, 1000);
+    camera.position.set(55, 26, 135);
+
+    const controls = new OrbitControls(camera, renderer.domElement);
+    controls.enableDamping = true;
+    controls.dampingFactor = 0.07;
+    controls.target.set(55, 14, 0);
+
+    // Lights
+    scene.add(new THREE.AmbientLight(0xffffff, 0.75));
+    const sun = new THREE.DirectionalLight(0xffffff, 0.9);
+    sun.position.set(60, 120, 80);
+    scene.add(sun);
+
+    // Helper for crisp 3D text sprites
+    function makeTextSprite(text, color = '#94a3b8', width = 256, fontSize = 30) {
+      const c = document.createElement('canvas');
+      c.width = width; c.height = 64;
+      const ctx = c.getContext('2d');
+      ctx.font = `bold ${fontSize}px "JetBrains Mono", monospace`;
+      ctx.fillStyle = color;
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.fillText(text, width / 2, 32);
+      const tex = new THREE.CanvasTexture(c);
+      const mat = new THREE.SpriteMaterial({ map: tex, depthTest: false });
+      const sp = new THREE.Sprite(mat);
+      sp.scale.set(width / 22, 64 / 22, 1);
+      return sp;
+    }
+
+    // --- ENVIRONMENT: GROUND, X-AXIS DISTANCE SCALE & Y-AXIS HEIGHT SCALE ---
+    const envGroup = new THREE.Group();
+    scene.add(envGroup);
+
+    // Ground strip
+    const groundGeo = new THREE.PlaneGeometry(260, 40);
+    const groundMat = new THREE.MeshStandardMaterial({ color: 0x111726, roughness: 0.9 });
+    const groundMesh = new THREE.Mesh(groundGeo, groundMat);
+    groundMesh.rotation.x = -Math.PI / 2;
+    groundMesh.position.set(95, -0.05, 0);
+    envGroup.add(groundMesh);
+
+    // Subtle ground grid
+    const grid = new THREE.GridHelper(240, 24, 0x1e293b, 0x172033);
+    grid.position.set(90, 0, 0);
+    envGroup.add(grid);
+
+    // X-Axis (Horizontal Range) and Y-Axis (Height) with ruler ticks
+    function buildAxesAndScales() {
+      const axisMat = new THREE.LineBasicMaterial({ color: 0x475569 });
+      // X-axis 0 to 200m
+      const xPts = [new THREE.Vector3(0, 0, 0), new THREE.Vector3(205, 0, 0)];
+      envGroup.add(new THREE.Line(new THREE.BufferGeometry().setFromPoints(xPts), axisMat));
+
+      for (let x = 0; x <= 200; x += 20) {
+        const tickPts = [new THREE.Vector3(x, 0, -2), new THREE.Vector3(x, 0, 2)];
+        envGroup.add(new THREE.Line(new THREE.BufferGeometry().setFromPoints(tickPts), axisMat));
+        const lbl = makeTextSprite(`${x}m`, '#64748b', 128, 26);
+        lbl.position.set(x, -2.5, 3);
+        envGroup.add(lbl);
+      }
+
+      // Y-axis 0 to 80m
+      const yPts = [new THREE.Vector3(0, 0, 0), new THREE.Vector3(0, 85, 0)];
+      envGroup.add(new THREE.Line(new THREE.BufferGeometry().setFromPoints(yPts), axisMat));
+
+      for (let y = 10; y <= 80; y += 10) {
+        const tickPts = [new THREE.Vector3(-1.5, y, 0), new THREE.Vector3(1.5, y, 0)];
+        envGroup.add(new THREE.Line(new THREE.BufferGeometry().setFromPoints(tickPts), axisMat));
+        const lbl = makeTextSprite(`${y}m`, '#64748b', 128, 26);
+        lbl.position.set(-5.5, y, 0);
+        envGroup.add(lbl);
+      }
+    }
+    buildAxesAndScales();
+
+    // --- CANNON, PLATFORM & MUZZLE VELOCITY ARROW ---
+    const platformMesh = new THREE.Mesh(
+      new THREE.BoxGeometry(8, 1, 8),
+      new THREE.MeshStandardMaterial({ color: 0x334155, roughness: 0.6 })
+    );
+    scene.add(platformMesh);
+
+    const cannonGroup = new THREE.Group();
+    scene.add(cannonGroup);
+
+    // Cannon carriage base
+    const baseMesh = new THREE.Mesh(
+      new THREE.CylinderGeometry(1.6, 2.1, 1.4, 20),
+      new THREE.MeshStandardMaterial({ color: 0x475569, metalness: 0.4, roughness: 0.5 })
+    );
+    baseMesh.position.y = 0.7;
+    cannonGroup.add(baseMesh);
+
+    // Pivoting barrel group (pivots around origin of cannonGroup)
+    const barrelPivot = new THREE.Group();
+    cannonGroup.add(barrelPivot);
+
+    const BARREL_LEN = 4.2;
+    const barrelMesh = new THREE.Mesh(
+      new THREE.CylinderGeometry(0.65, 0.85, BARREL_LEN, 24),
+      new THREE.MeshStandardMaterial({ color: 0x94a3b8, metalness: 0.6, roughness: 0.3 })
+    );
+    // Align cylinder along +X axis from pivot
+    barrelMesh.rotation.z = -Math.PI / 2;
+    barrelMesh.position.x = BARREL_LEN / 2;
+    barrelPivot.add(barrelMesh);
+
+    // Initial Velocity Arrow v0 emerging from cannon
+    const arrowV0 = new THREE.ArrowHelper(new THREE.Vector3(1, 0, 0), new THREE.Vector3(0, 0, 0), 8, 0x22c55e, 1.4, 0.8);
+    scene.add(arrowV0);
+
+    // --- CANNONBALL & IN-FLIGHT VELOCITY COMPONENT ARROWS ---
+    const ballMesh = new THREE.Mesh(
+      new THREE.SphereGeometry(1.05, 28, 28),
+      new THREE.MeshStandardMaterial({ color: 0xf97316, emissive: 0xf97316, emissiveIntensity: 0.45 })
+    );
+    scene.add(ballMesh);
+
+    const arrowVTotal = new THREE.ArrowHelper(new THREE.Vector3(1,0,0), new THREE.Vector3(0,0,0), 1, 0xffffff, 1.1, 0.6);
+    const arrowVx = new THREE.ArrowHelper(new THREE.Vector3(1,0,0), new THREE.Vector3(0,0,0), 1, 0x38bdf8, 1.0, 0.55);
+    const arrowVy = new THREE.ArrowHelper(new THREE.Vector3(0,1,0), new THREE.Vector3(0,0,0), 1, 0xfbbf24, 1.0, 0.55);
+    scene.add(arrowVTotal, arrowVx, arrowVy);
+
+    // --- TARGET ZONE, APEX MARKER & LANDING MARKER ---
+    const targetGroup = new THREE.Group();
+    scene.add(targetGroup);
+
+    const targetRing = new THREE.Mesh(
+      new THREE.RingGeometry(0.5, 4, 36),
+      new THREE.MeshBasicMaterial({ color: 0x22c55e, side: THREE.DoubleSide, transparent: true, opacity: 0.75 })
+    );
+    targetRing.rotation.x = -Math.PI / 2;
+    targetRing.position.y = 0.08;
+    targetGroup.add(targetRing);
+
+    const targetCenterDisc = new THREE.Mesh(
+      new THREE.CircleGeometry(1.1, 24),
+      new THREE.MeshBasicMaterial({ color: 0xef4444, side: THREE.DoubleSide })
+    );
+    targetCenterDisc.rotation.x = -Math.PI / 2;
+    targetCenterDisc.position.y = 0.12;
+    targetGroup.add(targetCenterDisc);
+
+    let targetLabelSprite = makeTextSprite('Target: 60m', '#4ade80', 256, 28);
+    targetLabelSprite.position.set(0, 4.2, 0);
+    targetGroup.add(targetLabelSprite);
+
+    // Apex Marker (Highest point)
+    const apexGroup = new THREE.Group();
+    apexGroup.visible = false;
+    scene.add(apexGroup);
+    const apexSphere = new THREE.Mesh(
+      new THREE.OctahedronGeometry(1.1, 0),
+      new THREE.MeshBasicMaterial({ color: 0xfbbf24 })
+    );
+    apexGroup.add(apexSphere);
+    let apexSprite = makeTextSprite('Apex', '#fbbf24', 320, 26);
+    apexSprite.position.set(0, 3.2, 0);
+    apexGroup.add(apexSprite);
+
+    // Landing Point Marker
+    const landingGroup = new THREE.Group();
+    landingGroup.visible = false;
+    scene.add(landingGroup);
+    const landingDisc = new THREE.Mesh(
+      new THREE.RingGeometry(0.8, 1.8, 28),
+      new THREE.MeshBasicMaterial({ color: 0x38bdf8, side: THREE.DoubleSide })
+    );
+    landingDisc.rotation.x = -Math.PI / 2;
+    landingDisc.position.y = 0.15;
+    landingGroup.add(landingDisc);
+    let landingSprite = makeTextSprite('R = 0m', '#38bdf8', 320, 26);
+    landingSprite.position.set(0, -3.2, 0);
+    landingGroup.add(landingSprite);
+
+    // --- TRAJECTORY LINES (PRIMARY & COMPARISON SHOT) ---
+    const MAX_PTS = 600;
+    function createTrajLine(colorHex) {
+      const buf = new Float32Array(MAX_PTS * 3);
+      const geo = new THREE.BufferGeometry();
+      geo.setAttribute('position', new THREE.BufferAttribute(buf, 3));
+      geo.setDrawRange(0, 0);
+      const mat = new THREE.LineBasicMaterial({ color: colorHex, linewidth: 2 });
+      const line = new THREE.Line(geo, mat);
+      scene.add(line);
+      return { line, geo, buf };
+    }
+    const primaryTraj = createTrajLine(0x38bdf8);
+    const compareTraj = createTrajLine(0xa855f7);
+    let compareApexSprite = null;
+
+    // --- EXACT IDEAL PROJECTILE MATH ENGINE ---
+    function calculateKinematics(v0, thetaDeg, y0) {
+      const rad = thetaDeg * Math.PI / 180;
+      const vx0 = v0 * Math.cos(rad);
+      const vy0 = v0 * Math.sin(rad);
+
+      // Apex time & max height above ground (y = 0)
+      const tApex = Math.max(0, vy0 / g);
+      const hAboveLaunch = (vy0 * vy0) / (2 * g);
+      const HMax = y0 + hAboveLaunch;
+      const xApex = vx0 * tApex;
+
+      // Landing time when y(t) = y0 + vy0*t - 0.5*g*t^2 = 0
+      let T = 0;
+      if (y0 === 0) {
+        T = (2 * vy0) / g;
+      } else {
+        T = (vy0 + Math.sqrt(vy0 * vy0 + 2 * g * y0)) / g;
+      }
+      const R = vx0 * T;
+
+      return { vx0, vy0, tApex, xApex, HMax, hAboveLaunch, T, R };
+    }
+
+    function positionAtTime(t, vx0, vy0, y0) {
+      const x = vx0 * t;
+      const y = Math.max(0, y0 + vy0 * t - 0.5 * g * t * t);
+      return { x, y };
+    }
+
+    // --- UPDATE CANNON AIM & UI ---
+    window.updateCannonAim = function() {
+      state.theta = parseFloat(document.getElementById('slAngle').value);
+      state.v0 = parseFloat(document.getElementById('slSpeed').value);
+
+      document.getElementById('lblAngle').textContent = `${state.theta}°`;
+      document.getElementById('lblSpeed').textContent = `${state.v0.toFixed(1)} m/s`;
+
+      const rad = state.theta * Math.PI / 180;
+      barrelPivot.rotation.z = rad;
+
+      // Update platform & cannon elevation y0
+      cannonGroup.position.set(0, state.y0, 0);
+      if (state.y0 > 0) {
+        platformMesh.visible = true;
+        platformMesh.scale.set(1, state.y0, 1);
+        platformMesh.position.set(0, state.y0 / 2, 0);
+      } else {
+        platformMesh.visible = false;
+      }
+
+      // Position ball at cannon origin before firing
+      if (!state.isFlying && state.flightTime === 0) {
+        ballMesh.position.set(0, state.y0, 0);
+      }
+
+      // Update initial velocity arrow v0
+      const dir = new THREE.Vector3(Math.cos(rad), Math.sin(rad), 0).normalize();
+      arrowV0.position.set(0, state.y0, 0);
+      arrowV0.setDirection(dir);
+      const len = Math.max(3, state.v0 * 0.35);
+      arrowV0.setLength(len, 1.3, 0.7);
+
+      // Update live initial velocity components
+      const vx0 = state.v0 * Math.cos(rad);
+      const vy0 = state.v0 * Math.sin(rad);
+      document.getElementById('roVx').textContent = `${vx0.toFixed(1)} m/s`;
+      document.getElementById('roVy').textContent = `${vy0.toFixed(1)} m/s`;
+    };
+
+    function updateCannonFloatingBadge() {
+      const badge = document.getElementById('cannon-badge');
+      const worldPos = new THREE.Vector3(0, state.y0 + 4.5, 0);
+      worldPos.project(camera);
+      const x = (worldPos.x * 0.5 + 0.5) * canvas.clientWidth;
+      const y = (-(worldPos.y * 0.5) + 0.5) * canvas.clientHeight;
+      badge.style.left = `${x}px`;
+      badge.style.top = `${y}px`;
+      badge.textContent = `θ = ${state.theta}° | v₀ = ${state.v0.toFixed(1)} m/s${state.y0 > 0 ? ` | y₀ = ${state.y0}m` : ''}`;
+    }
+
+    // --- ACHIEVABLE MISSION GENERATOR ---
+    const standardMissions = [
+      {
+        title: "Mission 1: The Height Challenge",
+        y0: 0,
+        desc: "Fire the cannonball so its maximum height is 20 m (±2.5 m) AND achieve a horizontal range of at least 40 m.",
+        targetX: 55, tolR: 15,
+        check: (k) => ({
+          rangeOk: k.R >= 40,
+          otherOk: Math.abs(k.HMax - 20) <= 2.5,
+          failReason: Math.abs(k.HMax - 20) > 2.5
+            ? `Maximum height was ${k.HMax.toFixed(1)} m (required 20 m ± 2.5 m). Hint: H depends only on v₀ᵧ = v₀ sin θ!`
+            : `Horizontal range was ${k.R.toFixed(1)} m (needed at least 40 m).`
+        })
+      },
+      {
+        title: "Mission 2: The Range Challenge",
+        y0: 0,
+        desc: "Hit the target at a horizontal distance of 60 m (±4 m) while keeping maximum height between 15 m and 25 m.",
+        targetX: 60, tolR: 4,
+        check: (k) => ({
+          rangeOk: Math.abs(k.R - 60) <= 4,
+          otherOk: k.HMax >= 15 && k.HMax <= 25,
+          failReason: `Height was ${k.HMax.toFixed(1)} m (must be between 15 m and 25 m).`
+        })
+      },
+      {
+        title: "Mission 3: The Precision Challenge",
+        y0: 0,
+        desc: "Reach a maximum height of 30 m (±3 m) AND land at a horizontal distance of 80 m (±5 m).",
+        targetX: 80, tolR: 5,
+        check: (k) => ({
+          rangeOk: Math.abs(k.R - 80) <= 5,
+          otherOk: Math.abs(k.HMax - 30) <= 3,
+          failReason: `Height reached ${k.HMax.toFixed(1)} m (target: 30 m ± 3 m). Try θ ≈ 56° and v₀ ≈ 29.5 m/s!`
+        })
+      },
+      {
+        title: "Mission 4: The Time Challenge",
+        y0: 0,
+        desc: "Keep the cannonball in the air for 4.0 seconds (±0.3 s) AND land within the target zone at 70 m (±5 m).",
+        targetX: 70, tolR: 5,
+        check: (k) => ({
+          rangeOk: Math.abs(k.R - 70) <= 5,
+          otherOk: Math.abs(k.T - 4.0) <= 0.3,
+          failReason: `Flight time was ${k.T.toFixed(2)} s (required 4.0 s ± 0.3 s). Remember T = 2v₀ sin θ / g!`
+        })
+      },
+      {
+        title: "Mission 5: The Advanced Challenge",
+        y0: 0,
+        desc: "Hit the target at 100 m (±5 m) while keeping the maximum height strictly below 35 m.",
+        targetX: 100, tolR: 5,
+        check: (k) => ({
+          rangeOk: Math.abs(k.R - 100) <= 5,
+          otherOk: k.HMax < 35,
+          failReason: `Ball hit the target range but exceeded the 35 m ceiling (H = ${k.HMax.toFixed(1)} m). Use the lower complementary angle!`
+        })
+      }
+    ];
+
+    window.cyclePresetMission = function() {
+      const m = standardMissions[state.presetIdx % standardMissions.length];
+      state.presetIdx++;
+      loadMission(m);
+    };
+
+    window.setDifficulty = function(diff, btn) {
+      state.difficulty = diff;
+      document.querySelectorAll('.diff-btn').forEach(b => b.classList.remove('active'));
+      if (btn) btn.classList.add('active');
+      nextMission(false);
+    };
+
+    window.nextMission = function() {
+      // Pick a physically valid (v0, theta) within slider limits first so every mission is 100% solvable
+      const randInt = (min, max) => Math.floor(Math.random() * (max - min + 1)) + min;
+      const v0Sol = randInt(18, 42);
+      const thSol = randInt(25, 65);
+      const y0 = state.difficulty === 'advanced' && Math.random() > 0.4 ? 15 : 0;
+      const sol = calculateKinematics(v0Sol, thSol, y0);
+
+      let m;
+      if (state.difficulty === 'beginner') {
+        const tol = 5;
+        m = {
+          title: "Beginner: Target Range Mission",
+          y0: 0,
+          desc: `Hit the target zone at R = ${sol.R.toFixed(0)} m (±${tol} m). Observe the apex and parabolic path.`,
+          targetX: Math.round(sol.R), tolR: tol,
+          check: (k) => ({
+            rangeOk: Math.abs(k.R - Math.round(sol.R)) <= tol,
+            otherOk: true,
+            failReason: ''
+          })
+        };
+      } else if (state.difficulty === 'intermediate') {
+        const tolR = 5, tolH = 3.5;
+        m = {
+          title: "Intermediate: Dual Range & Height Mission",
+          y0: 0,
+          desc: `Land at R = ${sol.R.toFixed(0)} m (±${tolR} m) AND reach a maximum height of H = ${sol.HMax.toFixed(0)} m (±${tolH} m).`,
+          targetX: Math.round(sol.R), tolR,
+          check: (k) => ({
+            rangeOk: Math.abs(k.R - Math.round(sol.R)) <= tolR,
+            otherOk: Math.abs(k.HMax - Math.round(sol.HMax)) <= tolH,
+            failReason: `Height was ${k.HMax.toFixed(1)} m (required ${sol.HMax.toFixed(0)} m ± ${tolH} m).`
+          })
+        };
+      } else {
+        const tolR = 3.5, tolT = 0.35;
+        m = {
+          title: y0 > 0 ? `Advanced: Elevated Platform (y₀ = ${y0} m)` : "Advanced: Precision Flight Time & Range",
+          y0,
+          desc: `${y0 > 0 ? `Launching from a ${y0} m cliff: ` : ''}Hit the narrow target at R = ${sol.R.toFixed(0)} m (±${tolR} m) with flight time T = ${sol.T.toFixed(1)} s (±${tolT} s).`,
+          targetX: Math.round(sol.R), tolR,
+          check: (k) => ({
+            rangeOk: Math.abs(k.R - Math.round(sol.R)) <= tolR,
+            otherOk: Math.abs(k.T - sol.T) <= tolT,
+            failReason: `Flight time was ${k.T.toFixed(2)} s (required ${sol.T.toFixed(1)} s ± ${tolT} s).`
+          })
+        };
+      }
+      loadMission(m);
+    };
+
+    function loadMission(m) {
+      state.currentMission = m;
+      state.y0 = m.y0 || 0;
+      document.getElementById('missionName').textContent = m.title;
+      document.getElementById('missionText').textContent = m.desc;
+
+      // Position target zone on ground
+      targetGroup.position.set(m.targetX, 0, 0);
+      targetRing.geometry.dispose();
+      targetRing.geometry = new THREE.RingGeometry(Math.max(0.8, m.tolR - 0.5), m.tolR, 36);
+
+      targetGroup.remove(targetLabelSprite);
+      targetLabelSprite = makeTextSprite(`Target: ${m.targetX}m (±${m.tolR}m)`, '#4ade80', 300, 24);
+      targetLabelSprite.position.set(0, 4.2, 0);
+      targetGroup.add(targetLabelSprite);
+
+      resetShot();
+    }
+
+    // --- FIRE, REPLAY, COMPARE & DEMO CONTROLS ---
+    window.fireCannon = function(isReplay = false) {
+      if (!isReplay) {
+        const keepPrev = document.getElementById('chkCompare').checked;
+        if (keepPrev && state.lastShotParams) {
+          copyPrimaryToCompare(state.lastShotParams);
+          document.getElementById('btnCompAngle').style.display = 'block';
+        } else {
+          compareTraj.geo.setDrawRange(0, 0);
+          if (compareApexSprite) compareApexSprite.visible = false;
+          document.getElementById('btnCompAngle').style.display = keepPrev ? 'block' : 'none';
+        }
+      }
+
+      const kin = calculateKinematics(state.v0, state.theta, state.y0);
+      state.lastShotParams = { theta: state.theta, v0: state.v0, y0: state.y0, kin };
+      state.totalFlightTime = Math.max(0.05, kin.T);
+      state.flightTime = 0;
+      state.isFlying = true;
+
+      apexGroup.visible = false;
+      landingGroup.visible = false;
+    };
+
+    window.fireComplementaryShot = function() {
+      if (!state.lastShotParams) return;
+      document.getElementById('chkCompare').checked = true;
+      const compAngle = Math.max(0, Math.min(90, 90 - state.theta));
+      document.getElementById('slAngle').value = compAngle;
+      updateCannonAim();
+      fireCannon(false);
+    };
+
+    window.runMaxRangeDemo = function() {
+      // Show 45 deg (Max Range) vs 75 deg (Greater Height, Shorter Range) at same speed
+      state.y0 = 0;
+      document.getElementById('chkCompare').checked = true;
+      document.getElementById('slSpeed').value = 30;
+      document.getElementById('slAngle').value = 75;
+      updateCannonAim();
+      const kin75 = calculateKinematics(30, 75, 0);
+      copyPrimaryToCompare({ theta: 75, v0: 30, y0: 0, kin: kin75 });
+
+      document.getElementById('slAngle').value = 45;
+      updateCannonAim();
+      fireCannon(false);
+    };
+
+    function copyPrimaryToCompare(shot) {
+      const k = shot.kin;
+      for (let i = 0; i < MAX_PTS; i++) {
+        const t = (i / (MAX_PTS - 1)) * k.T;
+        const p = positionAtTime(t, k.vx0, k.vy0, shot.y0);
+        compareTraj.buf[i * 3] = p.x;
+        compareTraj.buf[i * 3 + 1] = p.y;
+        compareTraj.buf[i * 3 + 2] = -0.5;
+      }
+      compareTraj.geo.attributes.position.needsUpdate = true;
+      compareTraj.geo.setDrawRange(0, MAX_PTS);
+
+      if (compareApexSprite) scene.remove(compareApexSprite);
+      compareApexSprite = makeTextSprite(
+        `Prev (${shot.theta}°): H=${k.HMax.toFixed(1)}m, R=${k.R.toFixed(1)}m`,
+        '#c084fc', 360, 22
+      );
+      compareApexSprite.position.set(k.xApex, k.HMax + 3.5, -0.5);
+      scene.add(compareApexSprite);
+    }
+
+    window.replayLastShot = function() {
+      if (!state.lastShotParams) return;
+      fireCannon(true);
+    };
+
+    window.resetShot = function() {
+      state.isFlying = false;
+      state.flightTime = 0;
+      primaryTraj.geo.setDrawRange(0, 0);
+      compareTraj.geo.setDrawRange(0, 0);
+      if (compareApexSprite) compareApexSprite.visible = false;
+      apexGroup.visible = false;
+      landingGroup.visible = false;
+      arrowVTotal.visible = false;
+      arrowVx.visible = false;
+      arrowVy.visible = false;
+      updateCannonAim();
+    };
+
+    window.toggleSlowMo = function() {
+      state.slowMo = !state.slowMo;
+      const btn = document.getElementById('btnSlowMo');
+      btn.textContent = state.slowMo ? '🐢 Slow-Mo: ON' : '🐢 Slow-Mo: OFF';
+      btn.classList.toggle('active', state.slowMo);
+    };
+
+    window.setCameraView = function(mode) {
+      if (mode === 'side') {
+        camera.position.set(55, 25, 135);
+        controls.target.set(55, 14, 0);
+      } else {
+        camera.position.set(-25, 45, 95);
+        controls.target.set(50, 12, 0);
+      }
+      controls.update();
+    };
+
+    window.updateVectorArrowsVisibility = function() {
+      if (!document.getElementById('chkVectors').checked) {
+        arrowVTotal.visible = false;
+        arrowVx.visible = false;
+        arrowVy.visible = false;
+      }
+    };
+
+    // --- PREDICTION QUIZ MODE ---
+    const predictionQuestions = [
+      {
+        q: "What happens if you increase launch angle θ (from 30° to 60°) while keeping initial speed v₀ constant?",
+        opts: [
+          { t: "Maximum height H increases and flight time T increases.", ok: true },
+          { t: "Horizontal velocity vₓ increases.", ok: false },
+          { t: "Flight time T decreases.", ok: false }
+        ],
+        explain: "Correct! Increasing θ increases v₀ᵧ = v₀ sin θ, which directly increases both H and T."
+      },
+      {
+        q: "During projectile flight (neglecting air drag), how do the velocity components behave?",
+        opts: [
+          { t: "vₓ remains constant while vᵧ changes continuously due to gravity.", ok: true },
+          { t: "Both vₓ and vᵧ decrease on the way up.", ok: false },
+          { t: "Vertical velocity vᵧ remains constant.", ok: false }
+        ],
+        explain: "Spot on! Horizontal acceleration aₓ = 0, so vₓ is constant; vertical acceleration is aᵧ = −g."
+      }
+    ];
+
+    window.togglePredictionMode = function(show) {
+      const box = document.getElementById('predictionBox');
+      box.style.display = show ? 'flex' : 'none';
+      if (show) {
+        const item = predictionQuestions[Math.floor(Math.random() * predictionQuestions.length)];
+        document.getElementById('predQuestionText').textContent = item.q;
+        const optContainer = document.getElementById('predOptions');
+        const fb = document.getElementById('predFeedback');
+        fb.textContent = '';
+        optContainer.innerHTML = '';
+        item.opts.forEach(o => {
+          const b = document.createElement('button');
+          b.className = 'pred-opt';
+          b.textContent = o.t;
+          b.onclick = () => {
+            fb.style.color = o.ok ? '#4ade80' : '#f87171';
+            fb.textContent = o.ok ? `✅ ${item.explain}` : `❌ Think about v₀ₓ = v₀ cos θ and v₀ᵧ = v₀ sin θ!`;
+          };
+          optContainer.appendChild(b);
+        });
+      }
+    };
+
+    // --- EVALUATE SHOT & GENERATE PHYSICS FEEDBACK ---
+    function finishShotAndEvaluate() {
+      const { theta, v0, y0, kin } = state.lastShotParams;
+
+      // Show Apex & Landing markers
+      apexGroup.position.set(kin.xApex, kin.HMax, 0);
+      apexGroup.remove(apexSprite);
+      apexSprite = makeTextSprite(`H_max = ${kin.HMax.toFixed(1)} m`, '#fbbf24', 320, 24);
+      apexSprite.position.set(0, 3.2, 0);
+      apexGroup.add(apexSprite);
+      apexGroup.visible = true;
+
+      landingGroup.position.set(kin.R, 0, 0);
+      landingGroup.remove(landingSprite);
+      landingSprite = makeTextSprite(`R = ${kin.R.toFixed(1)} m`, '#38bdf8', 320, 24);
+      landingSprite.position.set(0, -3.2, 0);
+      landingGroup.add(landingSprite);
+      landingGroup.visible = true;
+
+      // Update Bottom Telemetry
+      document.getElementById('roH').textContent = `${kin.HMax.toFixed(1)} m`;
+      document.getElementById('roR').textContent = `${kin.R.toFixed(1)} m`;
+      document.getElementById('roT').textContent = `${kin.T.toFixed(2)} s`;
+      document.getElementById('roVx').textContent = `${kin.vx0.toFixed(1)} m/s`;
+      document.getElementById('roVy').textContent = `${kin.vy0.toFixed(1)} m/s`;
+
+      // Dynamic Comparison with Previous Shot
+      let changeNote = '';
+      if (state.prevTheta !== null && state.prevV0 !== null) {
+        if (theta > state.prevTheta && v0 === state.prevV0) {
+          changeNote = "The launch angle increased, so initial vertical velocity v₀ᵧ increased and the ball reached a greater height.";
+        } else if (theta < state.prevTheta && v0 === state.prevV0) {
+          changeNote = "The launch angle decreased, reducing initial vertical velocity v₀ᵧ, maximum height, and flight time.";
+        } else if (v0 > state.prevV0) {
+          changeNote = "The launch speed increased, boosting both horizontal (v₀ₓ) and vertical (v₀ᵧ) velocity components.";
+        } else if (v0 < state.prevV0) {
+          changeNote = "The launch speed decreased, reducing both horizontal and vertical velocity components.";
+        }
+      }
+      state.prevTheta = theta;
+      state.prevV0 = v0;
+
+      // Mission Evaluation
+      const res = state.currentMission.check(kin);
+      const badge = document.getElementById('shotStatusBadge');
+      const exp = document.getElementById('shotExplanation');
+
+      if (res.rangeOk && res.otherOk) {
+        badge.className = 'status-badge pass';
+        badge.textContent = '✅ Mission Complete!';
+        state.solvedCount++;
+        document.getElementById('streakCounter').textContent = `Solved: ${state.solvedCount}`;
+        exp.textContent = `Great shot! R = ${kin.R.toFixed(1)} m, H = ${kin.HMax.toFixed(1)} m, T = ${kin.T.toFixed(2)} s. ${changeNote}`;
+
+        // Subtle target ring flash
+        targetRing.material.color.setHex(0x4ade80);
+      } else if (res.rangeOk && !res.otherOk) {
+        badge.className = 'status-badge warn';
+        badge.textContent = '⚠️ Target Hit — Condition Failed';
+        exp.textContent = `${res.failReason} ${changeNote}`;
+      } else {
+        badge.className = 'status-badge fail';
+        badge.textContent = '❌ Target Missed';
+        const diff = kin.R - state.currentMission.targetX;
+        const missStr = diff > 0 ? `Overshot target by ${diff.toFixed(1)} m.` : `Fell short by ${Math.abs(diff).toFixed(1)} m.`;
+        exp.textContent = `${missStr} ${changeNote || 'Adjust θ or v₀ using R = v₀² sin(2θ)/g.'}`;
+      }
+    }
+
+    // --- ANIMATION LOOP ---
+    let lastTime = performance.now();
+    function animate(now) {
+      requestAnimationFrame(animate);
+      const dtReal = Math.min(0.05, (now - lastTime) / 1000);
+      lastTime = now;
+
+      if (state.isFlying && state.lastShotParams) {
+        const speedFactor = state.slowMo ? 0.35 : 1.35;
+        state.flightTime += dtReal * speedFactor;
+
+        const { y0, kin } = state.lastShotParams;
+        if (state.flightTime >= state.totalFlightTime) {
+          state.flightTime = state.totalFlightTime;
+          state.isFlying = false;
+          finishShotAndEvaluate();
+        }
+
+        const p = positionAtTime(state.flightTime, kin.vx0, kin.vy0, y0);
+        ballMesh.position.set(p.x, p.y, 0);
+
+        // Show Apex marker as soon as ball passes tApex
+        if (state.flightTime >= kin.tApex && !apexGroup.visible) {
+          apexGroup.position.set(kin.xApex, kin.HMax, 0);
+          apexGroup.visible = true;
+        }
+
+        // Update live trajectory curve up to current flightTime
+        const progressRatio = state.flightTime / state.totalFlightTime;
+        const ptsCount = Math.max(2, Math.floor(progressRatio * MAX_PTS));
+        for (let i = 0; i < ptsCount; i++) {
+          const tSample = (i / (MAX_PTS - 1)) * state.totalFlightTime;
+          const pt = positionAtTime(tSample, kin.vx0, kin.vy0, y0);
+          primaryTraj.buf[i * 3] = pt.x;
+          primaryTraj.buf[i * 3 + 1] = pt.y;
+          primaryTraj.buf[i * 3 + 2] = 0;
+        }
+        primaryTraj.geo.attributes.position.needsUpdate = true;
+        primaryTraj.geo.setDrawRange(0, ptsCount);
+
+        // Update live velocity vectors attached to the ball
+        if (document.getElementById('chkVectors').checked) {
+          const vyInst = kin.vy0 - g * state.flightTime;
+          const vScale = 0.28;
+
+          // Horizontal component vx (constant!)
+          arrowVx.visible = kin.vx0 > 0.2;
+          arrowVx.position.copy(ballMesh.position);
+          arrowVx.setDirection(new THREE.Vector3(1, 0, 0));
+          arrowVx.setLength(Math.max(0.5, kin.vx0 * vScale), 0.9, 0.5);
+
+          // Vertical component vy (changes due to -g)
+          arrowVy.visible = Math.abs(vyInst) > 0.4;
+          arrowVy.position.copy(ballMesh.position);
+          arrowVy.setDirection(new THREE.Vector3(0, vyInst >= 0 ? 1 : -1, 0));
+          arrowVy.setLength(Math.max(0.5, Math.abs(vyInst) * vScale), 0.9, 0.5);
+
+          // Total instantaneous velocity vector v
+          const vTot = new THREE.Vector3(kin.vx0, vyInst, 0);
+          arrowVTotal.visible = vTot.length() > 0.4;
+          arrowVTotal.position.copy(ballMesh.position);
+          arrowVTotal.setDirection(vTot.clone().normalize());
+          arrowVTotal.setLength(Math.max(0.6, vTot.length() * vScale), 1.0, 0.55);
+        }
+      }
+
+      controls.update();
+      updateCannonFloatingBadge();
+      renderer.render(scene, camera);
+    }
+
+    function onResize() {
+      const w = canvas.parentElement.clientWidth;
+      const h = canvas.parentElement.clientHeight;
+      renderer.setSize(w, h);
+      camera.aspect = w / h;
+      camera.updateProjectionMatrix();
+    }
+    window.addEventListener('resize', onResize);
+
+    onResize();
+    cyclePresetMission();
+    requestAnimationFrame(animate);
+  </script>
+</body>
+</html>
