@@ -347,7 +347,7 @@
       <div class="ch-actions">
         <button onclick="nextMission(false)">↻ New Random Mission</button>
         <button onclick="cyclePresetMission()">📋 Standard 5 Missions</button>
-        <button onclick="runMaxRangeDemo()" title="Demonstrate 45° max range vs 90° max height">🎯 45° Max Range Demo</button>
+        <button onclick="runMaxRangeDemo()" title="Demonstrate 45° max range vs 75° max height">🎯 45° Max Range Demo</button>
       </div>
     </section>
 
@@ -372,7 +372,7 @@
           <span>Launch Angle (θ)</span>
           <span class="mono-val" id="lblAngle">45°</span>
         </div>
-        <input type="range" id="slAngle" min="0" max="90" step="1" value="45" oninput="updateCannonAim()">
+        <input type="range" id="slAngle" min="0" max="90" step="1" value="45" oninput="updateCannonAim(true)">
       </div>
 
       <div class="ctrl-block">
@@ -380,25 +380,29 @@
           <span>Initial Velocity (v₀)</span>
           <span class="mono-val" id="lblSpeed">25.0 m/s</span>
         </div>
-        <input type="range" id="slSpeed" min="5" max="50" step="0.5" value="25" oninput="updateCannonAim()">
+        <input type="range" id="slSpeed" min="5" max="50" step="0.5" value="25" oninput="updateCannonAim(true)">
       </div>
 
       <div class="fire-row">
-        <button class="btn-fire" onclick="fireCannon(false)">🔥 FIRE</button>
+        <button class="btn-fire" data-no-click-sound="true" onclick="fireCannon(false)">🔥 FIRE</button>
         <button onclick="resetShot()">↺ RESET</button>
       </div>
 
       <div class="sub-controls">
-        <button onclick="replayLastShot()">▶ Replay Shot</button>
+        <button data-no-click-sound="true" onclick="replayLastShot()">▶ Replay Shot</button>
         <button id="btnSlowMo" onclick="toggleSlowMo()">🐢 Slow-Mo: OFF</button>
       </div>
 
       <div class="opt-toggles">
         <label class="chk-row">
+          <span>🔊 Sound Effects (SFX)</span>
+          <input type="checkbox" id="chkSound" checked onchange="toggleSound(this.checked)">
+        </label>
+        <label class="chk-row">
           <span>Compare Two Shots (Keep Previous)</span>
           <input type="checkbox" id="chkCompare">
         </label>
-        <button id="btnCompAngle" onclick="fireComplementaryShot()" style="display:none; width:100%;">
+        <button id="btnCompAngle" data-no-click-sound="true" onclick="fireComplementaryShot()" style="display:none; width:100%;">
           Fire Complementary Angle (90° − θ)
         </button>
         <label class="chk-row">
@@ -447,11 +451,239 @@
       solvedCount: 0,
       presetIdx: 0,
       slowMo: false,
+      soundEnabled: true,
       isFlying: false,
       flightTime: 0,
       totalFlightTime: 0,
       currentMission: null,
       lastShotParams: null
+    };
+
+    // --- WEB AUDIO SYNTHESIZER (NO EXTERNAL FILES REQUIRED) ---
+    const sfx = {
+      ctx: null,
+      flightOsc: null,
+      flightGain: null,
+      windNode: null,
+      windFilter: null,
+      windGain: null,
+      lastTickTime: 0,
+
+      init() {
+        if (!this.ctx) {
+          const AudioCtx = window.AudioContext || window.webkitAudioContext;
+          if (AudioCtx) this.ctx = new AudioCtx();
+        }
+        if (this.ctx && this.ctx.state === 'suspended') {
+          this.ctx.resume();
+        }
+      },
+
+      // 1. Crisp UI Button Click
+      playClick(freq = 620) {
+        if (!state.soundEnabled) return;
+        this.init();
+        if (!this.ctx) return;
+        const now = this.ctx.currentTime;
+        const osc = this.ctx.createOscillator();
+        const gain = this.ctx.createGain();
+        osc.type = 'triangle';
+        osc.frequency.setValueAtTime(freq, now);
+        osc.frequency.exponentialRampToValueAtTime(180, now + 0.035);
+        gain.gain.setValueAtTime(0.14, now);
+        gain.gain.exponentialRampToValueAtTime(0.001, now + 0.035);
+        osc.connect(gain);
+        gain.connect(this.ctx.destination);
+        osc.start(now);
+        osc.stop(now + 0.04);
+      },
+
+      // 2. Mechanical Gear Tick when moving Angle or Velocity Sliders
+      playSliderTick(pitchFactor = 1.0) {
+        if (!state.soundEnabled) return;
+        const nowMs = performance.now();
+        if (nowMs - this.lastTickTime < 40) return; // Throttle ticks
+        this.lastTickTime = nowMs;
+
+        this.init();
+        if (!this.ctx) return;
+        const now = this.ctx.currentTime;
+        const osc = this.ctx.createOscillator();
+        const gain = this.ctx.createGain();
+        osc.type = 'sine';
+        osc.frequency.setValueAtTime(260 * pitchFactor, now);
+        gain.gain.setValueAtTime(0.06, now);
+        gain.gain.exponentialRampToValueAtTime(0.001, now + 0.02);
+        osc.connect(gain);
+        gain.connect(this.ctx.destination);
+        osc.start(now);
+        osc.stop(now + 0.025);
+      },
+
+      // 3. Cannon Launch Explosion (Low Sub-Bass Punch + Filtered Noise Burst)
+      playLaunch() {
+        if (!state.soundEnabled) return;
+        this.init();
+        if (!this.ctx) return;
+        const now = this.ctx.currentTime;
+
+        // Low-end thump oscillator
+        const osc = this.ctx.createOscillator();
+        const oscGain = this.ctx.createGain();
+        osc.type = 'sine';
+        osc.frequency.setValueAtTime(140, now);
+        osc.frequency.exponentialRampToValueAtTime(28, now + 0.38);
+        oscGain.gain.setValueAtTime(0.55, now);
+        oscGain.gain.exponentialRampToValueAtTime(0.001, now + 0.42);
+        osc.connect(oscGain);
+        oscGain.connect(this.ctx.destination);
+        osc.start(now);
+        osc.stop(now + 0.45);
+
+        // Explosive white noise burst
+        const bufSize = Math.floor(this.ctx.sampleRate * 0.45);
+        const noiseBuf = this.ctx.createBuffer(1, bufSize, this.ctx.sampleRate);
+        const data = noiseBuf.getChannelData(0);
+        for (let i = 0; i < bufSize; i++) {
+          data[i] = (Math.random() * 2 - 1) * Math.exp(-i / (this.ctx.sampleRate * 0.12));
+        }
+        const noise = this.ctx.createBufferSource();
+        noise.buffer = noiseBuf;
+
+        const filter = this.ctx.createBiquadFilter();
+        filter.type = 'lowpass';
+        filter.frequency.setValueAtTime(900, now);
+        filter.frequency.exponentialRampToValueAtTime(140, now + 0.4);
+
+        const nGain = this.ctx.createGain();
+        nGain.gain.setValueAtTime(0.45, now);
+        nGain.gain.exponentialRampToValueAtTime(0.01, now + 0.42);
+
+        noise.connect(filter);
+        filter.connect(nGain);
+        nGain.connect(this.ctx.destination);
+        noise.start(now);
+      },
+
+      // 4. Continuous Trajectory Whistle & Air Whoosh During Flight
+      startFlightSound() {
+        this.stopFlightSound();
+        if (!state.soundEnabled) return;
+        this.init();
+        if (!this.ctx) return;
+        const now = this.ctx.currentTime;
+
+        // Projectile whistle oscillator
+        this.flightOsc = this.ctx.createOscillator();
+        this.flightGain = this.ctx.createGain();
+        this.flightOsc.type = 'sine';
+        this.flightOsc.frequency.setValueAtTime(420, now);
+        this.flightGain.gain.setValueAtTime(0.001, now);
+        this.flightGain.gain.linearRampToValueAtTime(0.07, now + 0.08);
+        this.flightOsc.connect(this.flightGain);
+        this.flightGain.connect(this.ctx.destination);
+        this.flightOsc.start(now);
+
+        // Looping wind whoosh noise
+        const bufSize = this.ctx.sampleRate * 2;
+        const noiseBuf = this.ctx.createBuffer(1, bufSize, this.ctx.sampleRate);
+        const out = noiseBuf.getChannelData(0);
+        for (let i = 0; i < bufSize; i++) out[i] = Math.random() * 2 - 1;
+
+        this.windNode = this.ctx.createBufferSource();
+        this.windNode.buffer = noiseBuf;
+        this.windNode.loop = true;
+
+        this.windFilter = this.ctx.createBiquadFilter();
+        this.windFilter.type = 'bandpass';
+        this.windFilter.frequency.setValueAtTime(500, now);
+        this.windFilter.Q.setValueAtTime(3.0, now);
+
+        this.windGain = this.ctx.createGain();
+        this.windGain.gain.setValueAtTime(0.06, now);
+
+        this.windNode.connect(this.windFilter);
+        this.windFilter.connect(this.windGain);
+        this.windGain.connect(this.ctx.destination);
+        this.windNode.start(now);
+      },
+
+      updateFlightSound(speed, vy, height) {
+        if (!this.flightOsc || !this.ctx || !state.soundEnabled) return;
+        const now = this.ctx.currentTime;
+        // Whistle pitch rises with height and shifts with vertical velocity vy
+        const pitch = Math.max(180, Math.min(950, 340 + height * 4.5 + vy * 3.5));
+        this.flightOsc.frequency.setTargetAtTime(pitch, now, 0.04);
+        if (this.windFilter) {
+          const windFreq = Math.max(250, Math.min(1400, 300 + speed * 18));
+          this.windFilter.frequency.setTargetAtTime(windFreq, now, 0.04);
+        }
+      },
+
+      stopFlightSound() {
+        if (this.flightOsc) {
+          try { this.flightOsc.stop(); this.flightOsc.disconnect(); } catch (e) {}
+          this.flightOsc = null;
+        }
+        if (this.windNode) {
+          try { this.windNode.stop(); this.windNode.disconnect(); } catch (e) {}
+          this.windNode = null;
+        }
+      },
+
+      // 5. Ground Landing Impact + Mission Result Chime
+      playLand(isSuccess) {
+        this.stopFlightSound();
+        if (!state.soundEnabled) return;
+        this.init();
+        if (!this.ctx) return;
+        const now = this.ctx.currentTime;
+
+        // Ground impact thud
+        const osc = this.ctx.createOscillator();
+        const gain = this.ctx.createGain();
+        osc.type = 'sine';
+        osc.frequency.setValueAtTime(95, now);
+        osc.frequency.exponentialRampToValueAtTime(24, now + 0.22);
+        gain.gain.setValueAtTime(0.4, now);
+        gain.gain.exponentialRampToValueAtTime(0.001, now + 0.24);
+        osc.connect(gain);
+        gain.connect(this.ctx.destination);
+        osc.start(now);
+        osc.stop(now + 0.25);
+
+        // Celebratory chime if mission succeeded
+        if (isSuccess) {
+          [523.25, 659.25, 783.99, 1046.5].forEach((freq, idx) => {
+            const cOsc = this.ctx.createOscillator();
+            const cGain = this.ctx.createGain();
+            cOsc.type = 'triangle';
+            const tStart = now + 0.12 + idx * 0.08;
+            cOsc.frequency.setValueAtTime(freq, tStart);
+            cGain.gain.setValueAtTime(0.14, tStart);
+            cGain.gain.exponentialRampToValueAtTime(0.001, tStart + 0.32);
+            cOsc.connect(cGain);
+            cGain.connect(this.ctx.destination);
+            cOsc.start(tStart);
+            cOsc.stop(tStart + 0.35);
+          });
+        }
+      }
+    };
+
+    // Global listener for crisp control click sounds on buttons and checkboxes
+    document.addEventListener('click', (e) => {
+      const btn = e.target.closest('button');
+      if (btn && !btn.dataset.noClickSound) {
+        sfx.playClick(640);
+      } else if (e.target.matches('input[type="checkbox"]')) {
+        sfx.playClick(e.target.checked ? 740 : 480);
+      }
+    });
+
+    window.toggleSound = function(enabled) {
+      state.soundEnabled = enabled;
+      if (!enabled) sfx.stopFlightSound();
     };
 
     // --- THREE.JS SCENE INITIALIZATION ---
@@ -476,7 +708,6 @@
     sun.position.set(60, 120, 80);
     scene.add(sun);
 
-    // Helper for crisp 3D text sprites
     function makeTextSprite(text, color = '#94a3b8', width = 256, fontSize = 30) {
       const c = document.createElement('canvas');
       c.width = width; c.height = 64;
@@ -497,7 +728,6 @@
     const envGroup = new THREE.Group();
     scene.add(envGroup);
 
-    // Ground strip
     const groundGeo = new THREE.PlaneGeometry(260, 40);
     const groundMat = new THREE.MeshStandardMaterial({ color: 0x111726, roughness: 0.9 });
     const groundMesh = new THREE.Mesh(groundGeo, groundMat);
@@ -505,15 +735,12 @@
     groundMesh.position.set(95, -0.05, 0);
     envGroup.add(groundMesh);
 
-    // Subtle ground grid
     const grid = new THREE.GridHelper(240, 24, 0x1e293b, 0x172033);
     grid.position.set(90, 0, 0);
     envGroup.add(grid);
 
-    // X-Axis (Horizontal Range) and Y-Axis (Height) with ruler ticks
     function buildAxesAndScales() {
       const axisMat = new THREE.LineBasicMaterial({ color: 0x475569 });
-      // X-axis 0 to 200m
       const xPts = [new THREE.Vector3(0, 0, 0), new THREE.Vector3(205, 0, 0)];
       envGroup.add(new THREE.Line(new THREE.BufferGeometry().setFromPoints(xPts), axisMat));
 
@@ -525,7 +752,6 @@
         envGroup.add(lbl);
       }
 
-      // Y-axis 0 to 80m
       const yPts = [new THREE.Vector3(0, 0, 0), new THREE.Vector3(0, 85, 0)];
       envGroup.add(new THREE.Line(new THREE.BufferGeometry().setFromPoints(yPts), axisMat));
 
@@ -549,7 +775,6 @@
     const cannonGroup = new THREE.Group();
     scene.add(cannonGroup);
 
-    // Cannon carriage base
     const baseMesh = new THREE.Mesh(
       new THREE.CylinderGeometry(1.6, 2.1, 1.4, 20),
       new THREE.MeshStandardMaterial({ color: 0x475569, metalness: 0.4, roughness: 0.5 })
@@ -557,7 +782,6 @@
     baseMesh.position.y = 0.7;
     cannonGroup.add(baseMesh);
 
-    // Pivoting barrel group (pivots around origin of cannonGroup)
     const barrelPivot = new THREE.Group();
     cannonGroup.add(barrelPivot);
 
@@ -566,12 +790,10 @@
       new THREE.CylinderGeometry(0.65, 0.85, BARREL_LEN, 24),
       new THREE.MeshStandardMaterial({ color: 0x94a3b8, metalness: 0.6, roughness: 0.3 })
     );
-    // Align cylinder along +X axis from pivot
     barrelMesh.rotation.z = -Math.PI / 2;
     barrelMesh.position.x = BARREL_LEN / 2;
     barrelPivot.add(barrelMesh);
 
-    // Initial Velocity Arrow v0 emerging from cannon
     const arrowV0 = new THREE.ArrowHelper(new THREE.Vector3(1, 0, 0), new THREE.Vector3(0, 0, 0), 8, 0x22c55e, 1.4, 0.8);
     scene.add(arrowV0);
 
@@ -611,7 +833,6 @@
     targetLabelSprite.position.set(0, 4.2, 0);
     targetGroup.add(targetLabelSprite);
 
-    // Apex Marker (Highest point)
     const apexGroup = new THREE.Group();
     apexGroup.visible = false;
     scene.add(apexGroup);
@@ -624,7 +845,6 @@
     apexSprite.position.set(0, 3.2, 0);
     apexGroup.add(apexSprite);
 
-    // Landing Point Marker
     const landingGroup = new THREE.Group();
     landingGroup.visible = false;
     scene.add(landingGroup);
@@ -661,13 +881,11 @@
       const vx0 = v0 * Math.cos(rad);
       const vy0 = v0 * Math.sin(rad);
 
-      // Apex time & max height above ground (y = 0)
       const tApex = Math.max(0, vy0 / g);
       const hAboveLaunch = (vy0 * vy0) / (2 * g);
       const HMax = y0 + hAboveLaunch;
       const xApex = vx0 * tApex;
 
-      // Landing time when y(t) = y0 + vy0*t - 0.5*g*t^2 = 0
       let T = 0;
       if (y0 === 0) {
         T = (2 * vy0) / g;
@@ -686,9 +904,13 @@
     }
 
     // --- UPDATE CANNON AIM & UI ---
-    window.updateCannonAim = function() {
+    window.updateCannonAim = function(fromSlider = false) {
       state.theta = parseFloat(document.getElementById('slAngle').value);
       state.v0 = parseFloat(document.getElementById('slSpeed').value);
+
+      if (fromSlider) {
+        sfx.playSliderTick(0.8 + (state.theta / 90) * 0.5);
+      }
 
       document.getElementById('lblAngle').textContent = `${state.theta}°`;
       document.getElementById('lblSpeed').textContent = `${state.v0.toFixed(1)} m/s`;
@@ -696,7 +918,6 @@
       const rad = state.theta * Math.PI / 180;
       barrelPivot.rotation.z = rad;
 
-      // Update platform & cannon elevation y0
       cannonGroup.position.set(0, state.y0, 0);
       if (state.y0 > 0) {
         platformMesh.visible = true;
@@ -706,19 +927,16 @@
         platformMesh.visible = false;
       }
 
-      // Position ball at cannon origin before firing
       if (!state.isFlying && state.flightTime === 0) {
         ballMesh.position.set(0, state.y0, 0);
       }
 
-      // Update initial velocity arrow v0
       const dir = new THREE.Vector3(Math.cos(rad), Math.sin(rad), 0).normalize();
       arrowV0.position.set(0, state.y0, 0);
       arrowV0.setDirection(dir);
       const len = Math.max(3, state.v0 * 0.35);
       arrowV0.setLength(len, 1.3, 0.7);
 
-      // Update live initial velocity components
       const vx0 = state.v0 * Math.cos(rad);
       const vy0 = state.v0 * Math.sin(rad);
       document.getElementById('roVx').textContent = `${vx0.toFixed(1)} m/s`;
@@ -811,7 +1029,6 @@
     };
 
     window.nextMission = function() {
-      // Pick a physically valid (v0, theta) within slider limits first so every mission is 100% solvable
       const randInt = (min, max) => Math.floor(Math.random() * (max - min + 1)) + min;
       const v0Sol = randInt(18, 42);
       const thSol = randInt(25, 65);
@@ -868,7 +1085,6 @@
       document.getElementById('missionName').textContent = m.title;
       document.getElementById('missionText').textContent = m.desc;
 
-      // Position target zone on ground
       targetGroup.position.set(m.targetX, 0, 0);
       targetRing.geometry.dispose();
       targetRing.geometry = new THREE.RingGeometry(Math.max(0.8, m.tolR - 0.5), m.tolR, 36);
@@ -903,6 +1119,10 @@
 
       apexGroup.visible = false;
       landingGroup.visible = false;
+
+      // Trigger Cannon Launch Boom & In-Flight Trajectory Sound!
+      sfx.playLaunch();
+      sfx.startFlightSound();
     };
 
     window.fireComplementaryShot = function() {
@@ -915,7 +1135,6 @@
     };
 
     window.runMaxRangeDemo = function() {
-      // Show 45 deg (Max Range) vs 75 deg (Greater Height, Shorter Range) at same speed
       state.y0 = 0;
       document.getElementById('chkCompare').checked = true;
       document.getElementById('slSpeed').value = 30;
@@ -956,6 +1175,7 @@
     };
 
     window.resetShot = function() {
+      sfx.stopFlightSound();
       state.isFlying = false;
       state.flightTime = 0;
       primaryTraj.geo.setDrawRange(0, 0);
@@ -1044,7 +1264,6 @@
     function finishShotAndEvaluate() {
       const { theta, v0, y0, kin } = state.lastShotParams;
 
-      // Show Apex & Landing markers
       apexGroup.position.set(kin.xApex, kin.HMax, 0);
       apexGroup.remove(apexSprite);
       apexSprite = makeTextSprite(`H_max = ${kin.HMax.toFixed(1)} m`, '#fbbf24', 320, 24);
@@ -1059,14 +1278,12 @@
       landingGroup.add(landingSprite);
       landingGroup.visible = true;
 
-      // Update Bottom Telemetry
       document.getElementById('roH').textContent = `${kin.HMax.toFixed(1)} m`;
       document.getElementById('roR').textContent = `${kin.R.toFixed(1)} m`;
       document.getElementById('roT').textContent = `${kin.T.toFixed(2)} s`;
       document.getElementById('roVx').textContent = `${kin.vx0.toFixed(1)} m/s`;
       document.getElementById('roVy').textContent = `${kin.vy0.toFixed(1)} m/s`;
 
-      // Dynamic Comparison with Previous Shot
       let changeNote = '';
       if (state.prevTheta !== null && state.prevV0 !== null) {
         if (theta > state.prevTheta && v0 === state.prevV0) {
@@ -1082,19 +1299,20 @@
       state.prevTheta = theta;
       state.prevV0 = v0;
 
-      // Mission Evaluation
       const res = state.currentMission.check(kin);
       const badge = document.getElementById('shotStatusBadge');
       const exp = document.getElementById('shotExplanation');
+      const isComplete = res.rangeOk && res.otherOk;
 
-      if (res.rangeOk && res.otherOk) {
+      // Play landing thud + optional mission complete fanfare
+      sfx.playLand(isComplete);
+
+      if (isComplete) {
         badge.className = 'status-badge pass';
         badge.textContent = '✅ Mission Complete!';
         state.solvedCount++;
         document.getElementById('streakCounter').textContent = `Solved: ${state.solvedCount}`;
         exp.textContent = `Great shot! R = ${kin.R.toFixed(1)} m, H = ${kin.HMax.toFixed(1)} m, T = ${kin.T.toFixed(2)} s. ${changeNote}`;
-
-        // Subtle target ring flash
         targetRing.material.color.setHex(0x4ade80);
       } else if (res.rangeOk && !res.otherOk) {
         badge.className = 'status-badge warn';
@@ -1121,22 +1339,26 @@
         state.flightTime += dtReal * speedFactor;
 
         const { y0, kin } = state.lastShotParams;
+        const vyInst = kin.vy0 - g * state.flightTime;
+        const speedInst = Math.hypot(kin.vx0, vyInst);
+
         if (state.flightTime >= state.totalFlightTime) {
           state.flightTime = state.totalFlightTime;
           state.isFlying = false;
           finishShotAndEvaluate();
+        } else {
+          const pCur = positionAtTime(state.flightTime, kin.vx0, kin.vy0, y0);
+          sfx.updateFlightSound(speedInst, vyInst, pCur.y);
         }
 
         const p = positionAtTime(state.flightTime, kin.vx0, kin.vy0, y0);
         ballMesh.position.set(p.x, p.y, 0);
 
-        // Show Apex marker as soon as ball passes tApex
         if (state.flightTime >= kin.tApex && !apexGroup.visible) {
           apexGroup.position.set(kin.xApex, kin.HMax, 0);
           apexGroup.visible = true;
         }
 
-        // Update live trajectory curve up to current flightTime
         const progressRatio = state.flightTime / state.totalFlightTime;
         const ptsCount = Math.max(2, Math.floor(progressRatio * MAX_PTS));
         for (let i = 0; i < ptsCount; i++) {
@@ -1149,24 +1371,19 @@
         primaryTraj.geo.attributes.position.needsUpdate = true;
         primaryTraj.geo.setDrawRange(0, ptsCount);
 
-        // Update live velocity vectors attached to the ball
         if (document.getElementById('chkVectors').checked) {
-          const vyInst = kin.vy0 - g * state.flightTime;
           const vScale = 0.28;
 
-          // Horizontal component vx (constant!)
           arrowVx.visible = kin.vx0 > 0.2;
           arrowVx.position.copy(ballMesh.position);
           arrowVx.setDirection(new THREE.Vector3(1, 0, 0));
           arrowVx.setLength(Math.max(0.5, kin.vx0 * vScale), 0.9, 0.5);
 
-          // Vertical component vy (changes due to -g)
           arrowVy.visible = Math.abs(vyInst) > 0.4;
           arrowVy.position.copy(ballMesh.position);
           arrowVy.setDirection(new THREE.Vector3(0, vyInst >= 0 ? 1 : -1, 0));
           arrowVy.setLength(Math.max(0.5, Math.abs(vyInst) * vScale), 0.9, 0.5);
 
-          // Total instantaneous velocity vector v
           const vTot = new THREE.Vector3(kin.vx0, vyInst, 0);
           arrowVTotal.visible = vTot.length() > 0.4;
           arrowVTotal.position.copy(ballMesh.position);
