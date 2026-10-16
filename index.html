@@ -6,7 +6,7 @@
   <title>Cannon Physics Challenge — 3D Projectile Motion Game</title>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600;700&display=swap" rel="stylesheet">
   <script type="importmap">
     {
       "imports": {
@@ -52,6 +52,14 @@
       width: 100%;
       height: 100%;
       display: block;
+    }
+    #confettiCanvas {
+      position: absolute;
+      inset: 0;
+      width: 100%;
+      height: 100%;
+      pointer-events: none;
+      z-index: 25;
     }
 
     /* Top Left: Compact Challenge Panel */
@@ -243,6 +251,90 @@
       font-size: 0.76rem;
     }
 
+    /* NEW: Celebration Victory Modal Overlay */
+    .victory-modal {
+      position: absolute;
+      top: 50%;
+      left: 50%;
+      transform: translate(-50%, -50%) scale(0.9);
+      width: 430px;
+      max-width: 92vw;
+      background: rgba(15, 23, 42, 0.95);
+      backdrop-filter: blur(16px);
+      border: 2px solid var(--success);
+      border-radius: 18px;
+      padding: 24px;
+      text-align: center;
+      box-shadow: 0 20px 60px rgba(34, 197, 94, 0.35);
+      display: none;
+      flex-direction: column;
+      gap: 14px;
+      z-index: 30;
+      animation: popIn 0.35s cubic-bezier(0.175, 0.885, 0.32, 1.275) forwards;
+    }
+    @keyframes popIn {
+      to { transform: translate(-50%, -50%) scale(1); }
+    }
+    .vic-badge {
+      align-self: center;
+      background: rgba(34, 197, 94, 0.2);
+      color: #4ade80;
+      border: 1px solid #22c55e;
+      padding: 4px 14px;
+      border-radius: 99px;
+      font-size: 0.78rem;
+      font-weight: 800;
+      letter-spacing: 0.06em;
+      text-transform: uppercase;
+    }
+    .victory-modal h2 {
+      font-size: 1.5rem;
+      font-weight: 800;
+      color: #ffffff;
+    }
+    .vic-stats {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 8px;
+      background: rgba(255,255,255,0.05);
+      padding: 10px;
+      border-radius: 10px;
+      border: 1px solid var(--border);
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 0.78rem;
+    }
+    .vic-stats div span { display: block; font-size: 0.68rem; color: var(--muted); }
+    .vic-stats div b { color: #38bdf8; font-size: 0.92rem; }
+    .vic-actions {
+      display: flex;
+      gap: 10px;
+      margin-top: 4px;
+    }
+    .btn-next-level {
+      flex: 2;
+      background: linear-gradient(135deg, #22c55e, #16a34a);
+      border: none;
+      color: #fff;
+      font-size: 0.9rem;
+      font-weight: 800;
+      padding: 12px;
+      border-radius: 10px;
+      cursor: pointer;
+      box-shadow: 0 6px 20px rgba(34, 197, 94, 0.4);
+      transition: transform 0.15s;
+    }
+    .btn-next-level:hover { transform: translateY(-2px); background: linear-gradient(135deg, #4ade80, #16a34a); }
+    .btn-inspect {
+      flex: 1;
+      background: #1e293b;
+      border: 1px solid var(--border);
+      color: var(--text);
+      font-size: 0.8rem;
+      font-weight: 600;
+      padding: 12px;
+      border-radius: 10px;
+    }
+
     /* Post-Shot Physics Feedback Strip */
     .feedback-bar {
       height: 58px;
@@ -319,15 +411,34 @@
 
   <div id="game-viewport">
     <canvas id="canvas3d"></canvas>
+    <canvas id="confettiCanvas"></canvas>
     <div id="cannon-badge">θ = 45° | v₀ = 25 m/s</div>
+
+    <!-- NEW: Celebration & Jump to Next Level Popup -->
+    <div class="victory-modal" id="victoryModal">
+      <span class="vic-badge" id="vicLevelBadge">🎯 Target Bullseye!</span>
+      <h2>🎉 Absolutely Correct!</h2>
+      <p id="vicMessage" style="font-size:0.86rem; color:var(--muted); line-height:1.45;">
+        You mastered the projectile kinematics for this mission!
+      </p>
+      <div class="vic-stats">
+        <div><span>Range (R)</span><b id="vicR">60.0 m</b></div>
+        <div><span>Max Height (H)</span><b id="vicH">20.0 m</b></div>
+        <div><span>Flight Time (T)</span><b id="vicT">2.85 s</b></div>
+      </div>
+      <div class="vic-actions">
+        <button class="btn-inspect" onclick="closeVictoryModal()">🔍 Inspect Path</button>
+        <button class="btn-next-level" onclick="jumpToNextLevel()">🚀 Jump to Next Level &rarr;</button>
+      </div>
+    </div>
 
     <!-- Top-Left Mission & Camera Panel -->
     <section class="challenge-hud">
       <div class="ch-top">
         <div class="diff-pills">
-          <button class="diff-btn active" onclick="setDifficulty('beginner', this)">Beginner</button>
-          <button class="diff-btn" onclick="setDifficulty('intermediate', this)">Intermediate</button>
-          <button class="diff-btn" onclick="setDifficulty('advanced', this)">Advanced</button>
+          <button class="diff-btn active" id="diff-beginner" onclick="setDifficulty('beginner', this)">Beginner</button>
+          <button class="diff-btn" id="diff-intermediate" onclick="setDifficulty('intermediate', this)">Intermediate</button>
+          <button class="diff-btn" id="diff-advanced" onclick="setDifficulty('advanced', this)">Advanced</button>
         </div>
         <div style="display:flex; gap:5px;">
           <button onclick="setCameraView('side')">Side 2D View</button>
@@ -337,7 +448,7 @@
 
       <div class="mission-title">
         <span id="missionName">Mission 1: The Range Challenge</span>
-        <span style="font-size:0.74rem; color:var(--muted);" id="streakCounter">Solved: 0</span>
+        <span style="font-size:0.74rem; color:#4ade80; font-weight:800;" id="streakCounter">⭐ Level 1 (Solved: 0)</span>
       </div>
 
       <div class="mission-desc" id="missionText">
@@ -383,7 +494,7 @@
         <input type="range" id="slSpeed" min="5" max="50" step="0.5" value="25" oninput="updateCannonAim(true)">
       </div>
 
-      <!-- NEW: Cannon Cliff / Platform Height Adjustor -->
+      <!-- Cannon Cliff / Platform Height Adjustor -->
       <div class="ctrl-block">
         <div class="ctrl-label">
           <span>Cliff Height (y₀)</span>
@@ -460,6 +571,7 @@
       prevY0: null,
       difficulty: 'beginner',
       solvedCount: 0,
+      level: 1,
       presetIdx: 0,
       slowMo: false,
       soundEnabled: true,
@@ -470,7 +582,7 @@
       lastShotParams: null
     };
 
-    // --- WEB AUDIO SYNTHESIZER (NO EXTERNAL FILES REQUIRED) ---
+    // --- WEB AUDIO SYNTHESIZER (WITH FIREWORK CRACKERS & FANFARE) ---
     const sfx = {
       ctx: null,
       flightOsc: null,
@@ -633,6 +745,36 @@
         }
       },
 
+      // Firecracker Burst + Victory Chord Fanfare
+      playCrackerBurst(delaySec = 0) {
+        if (!state.soundEnabled || !this.ctx) return;
+        const t0 = this.ctx.currentTime + delaySec;
+
+        // Sharp cracker snap noise
+        const bufSize = Math.floor(this.ctx.sampleRate * 0.28);
+        const noiseBuf = this.ctx.createBuffer(1, bufSize, this.ctx.sampleRate);
+        const data = noiseBuf.getChannelData(0);
+        for (let i = 0; i < bufSize; i++) {
+          data[i] = (Math.random() * 2 - 1) * Math.exp(-i / (this.ctx.sampleRate * 0.05));
+        }
+        const noise = this.ctx.createBufferSource();
+        noise.buffer = noiseBuf;
+
+        const filter = this.ctx.createBiquadFilter();
+        filter.type = 'bandpass';
+        filter.frequency.setValueAtTime(1400 + Math.random() * 800, t0);
+        filter.Q.setValueAtTime(1.5, t0);
+
+        const gain = this.ctx.createGain();
+        gain.gain.setValueAtTime(0.38, t0);
+        gain.gain.exponentialRampToValueAtTime(0.005, t0 + 0.26);
+
+        noise.connect(filter);
+        filter.connect(gain);
+        gain.connect(this.ctx.destination);
+        noise.start(t0);
+      },
+
       playLand(isSuccess) {
         this.stopFlightSound();
         if (!state.soundEnabled) return;
@@ -653,18 +795,23 @@
         osc.stop(now + 0.25);
 
         if (isSuccess) {
-          [523.25, 659.25, 783.99, 1046.5].forEach((freq, idx) => {
+          // 3 Firework Cracker Pops + Triumphant Major Arpeggio
+          this.playCrackerBurst(0.05);
+          this.playCrackerBurst(0.28);
+          this.playCrackerBurst(0.52);
+
+          [523.25, 659.25, 783.99, 1046.5, 1318.5].forEach((freq, idx) => {
             const cOsc = this.ctx.createOscillator();
             const cGain = this.ctx.createGain();
             cOsc.type = 'triangle';
-            const tStart = now + 0.12 + idx * 0.08;
+            const tStart = now + 0.08 + idx * 0.08;
             cOsc.frequency.setValueAtTime(freq, tStart);
-            cGain.gain.setValueAtTime(0.14, tStart);
-            cGain.gain.exponentialRampToValueAtTime(0.001, tStart + 0.32);
+            cGain.gain.setValueAtTime(0.16, tStart);
+            cGain.gain.exponentialRampToValueAtTime(0.001, tStart + 0.4);
             cOsc.connect(cGain);
             cGain.connect(this.ctx.destination);
             cOsc.start(tStart);
-            cOsc.stop(tStart + 0.35);
+            cOsc.stop(tStart + 0.42);
           });
         }
       }
@@ -683,6 +830,55 @@
       state.soundEnabled = enabled;
       if (!enabled) sfx.stopFlightSound();
     };
+
+    // --- 2D CONFETTI & 3D FIREWORK CRACKERS ENGINE ---
+    const confettiCanvas = document.getElementById('confettiCanvas');
+    const cCtx = confettiCanvas.getContext('2d');
+    let confettiPieces = [];
+
+    function spawnConfetti2D() {
+      confettiPieces = [];
+      const colors = ['#22c55e', '#38bdf8', '#f59e0b', '#ec4899', '#a855f7', '#fde047'];
+      for (let i = 0; i < 110; i++) {
+        confettiPieces.push({
+          x: confettiCanvas.width * (0.2 + Math.random() * 0.6),
+          y: confettiCanvas.height * 0.35,
+          vx: (Math.random() - 0.5) * 14,
+          vy: -Math.random() * 12 - 4,
+          size: 6 + Math.random() * 6,
+          color: colors[i % colors.length],
+          rot: Math.random() * Math.PI * 2,
+          vRot: (Math.random() - 0.5) * 0.25,
+          life: 1.0
+        });
+      }
+    }
+
+    function updateConfetti2D(dt) {
+      cCtx.clearRect(0, 0, confettiCanvas.width, confettiCanvas.height);
+      if (confettiPieces.length === 0) return;
+
+      for (let i = confettiPieces.length - 1; i >= 0; i--) {
+        const p = confettiPieces[i];
+        p.x += p.vx;
+        p.y += p.vy;
+        p.vy += 0.32; // gravity
+        p.rot += p.vRot;
+        p.life -= dt * 0.38;
+
+        if (p.life <= 0 || p.y > confettiCanvas.height + 20) {
+          confettiPieces.splice(i, 1);
+          continue;
+        }
+        cCtx.save();
+        cCtx.translate(p.x, p.y);
+        cCtx.rotate(p.rot);
+        cCtx.fillStyle = p.color;
+        cCtx.globalAlpha = Math.max(0, p.life);
+        cCtx.fillRect(-p.size / 2, -p.size / 2, p.size, p.size * 0.6);
+        cCtx.restore();
+      }
+    }
 
     // --- THREE.JS SCENE INITIALIZATION ---
     const canvas = document.getElementById('canvas3d');
@@ -705,6 +901,72 @@
     const sun = new THREE.DirectionalLight(0xffffff, 0.9);
     sun.position.set(60, 120, 80);
     scene.add(sun);
+
+    // 3D Firework Cracker Bursts at Target
+    const fireworkBursts = [];
+    function spawn3DFireworks(targetX) {
+      const palette = [0x4ade80, 0x38bdf8, 0xfbbf24, 0xf43f5e, 0xc084fc];
+      for (let b = 0; b < 3; b++) {
+        const count = 65;
+        const positions = new Float32Array(count * 3);
+        const velocities = [];
+        const originY = 2 + b * 7;
+        const originZ = (b - 1) * 4;
+
+        for (let i = 0; i < count; i++) {
+          positions[i * 3] = targetX;
+          positions[i * 3 + 1] = originY;
+          positions[i * 3 + 2] = originZ;
+
+          const theta = Math.random() * Math.PI * 2;
+          const phi = Math.acos(2 * Math.random() - 1);
+          const speed = 8 + Math.random() * 16;
+          velocities.push(new THREE.Vector3(
+            speed * Math.sin(phi) * Math.cos(theta),
+            speed * Math.cos(phi) + 6,
+            speed * Math.sin(phi) * Math.sin(theta)
+          ));
+        }
+
+        const geo = new THREE.BufferGeometry();
+        geo.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+        const mat = new THREE.PointsMaterial({
+          color: palette[b % palette.length],
+          size: 1.4,
+          transparent: true,
+          opacity: 1.0
+        });
+        const points = new THREE.Points(geo, mat);
+        scene.add(points);
+        fireworkBursts.push({ points, geo, positions, velocities, mat, age: -b * 0.2 });
+      }
+    }
+
+    function update3DFireworks(dt) {
+      for (let i = fireworkBursts.length - 1; i >= 0; i--) {
+        const fw = fireworkBursts[i];
+        fw.age += dt;
+        if (fw.age < 0) continue;
+
+        const count = fw.velocities.length;
+        for (let j = 0; j < count; j++) {
+          const v = fw.velocities[j];
+          v.y -= 9.8 * dt;
+          fw.positions[j * 3] += v.x * dt;
+          fw.positions[j * 3 + 1] = Math.max(0.2, fw.positions[j * 3 + 1] + v.y * dt);
+          fw.positions[j * 3 + 2] += v.z * dt;
+        }
+        fw.geo.attributes.position.needsUpdate = true;
+        fw.mat.opacity = Math.max(0, 1 - fw.age / 1.8);
+
+        if (fw.age > 1.8) {
+          scene.remove(fw.points);
+          fw.geo.dispose();
+          fw.mat.dispose();
+          fireworkBursts.splice(i, 1);
+        }
+      }
+    }
 
     function makeTextSprite(text, color = '#94a3b8', width = 256, fontSize = 30) {
       const c = document.createElement('canvas');
@@ -773,7 +1035,6 @@
     );
     platformGroup.add(platformMesh);
 
-    // Top cap rim on cliff so it looks like a proper stone launch pad
     const cliffCapMesh = new THREE.Mesh(
       new THREE.BoxGeometry(9.4, 0.8, 9.4),
       new THREE.MeshStandardMaterial({ color: 0x475569, roughness: 0.5 })
@@ -929,7 +1190,6 @@
       const rad = state.theta * Math.PI / 180;
       barrelPivot.rotation.z = rad;
 
-      // Update 3D Cliff Pillar & Cannon elevation y0
       cannonGroup.position.set(0, state.y0, 0);
       if (state.y0 > 0) {
         platformGroup.visible = true;
@@ -1031,13 +1291,33 @@
       }
     ];
 
+    window.closeVictoryModal = function() {
+      document.getElementById('victoryModal').style.display = 'none';
+    };
+
+    window.jumpToNextLevel = function() {
+      closeVictoryModal();
+      state.level++;
+      // Auto-upgrade difficulty as student progresses!
+      if (state.level === 3 && state.difficulty === 'beginner') {
+        setDifficulty('intermediate', document.getElementById('diff-intermediate'));
+        return;
+      } else if (state.level === 6 && state.difficulty === 'intermediate') {
+        setDifficulty('advanced', document.getElementById('diff-advanced'));
+        return;
+      }
+      cyclePresetMission();
+    };
+
     window.cyclePresetMission = function() {
+      closeVictoryModal();
       const m = standardMissions[state.presetIdx % standardMissions.length];
       state.presetIdx++;
       loadMission(m);
     };
 
     window.setDifficulty = function(diff, btn) {
+      closeVictoryModal();
       state.difficulty = diff;
       document.querySelectorAll('.diff-btn').forEach(b => b.classList.remove('active'));
       if (btn) btn.classList.add('active');
@@ -1045,6 +1325,7 @@
     };
 
     window.nextMission = function() {
+      closeVictoryModal();
       const randInt = (min, max) => Math.floor(Math.random() * (max - min + 1)) + min;
       const v0Sol = randInt(18, 42);
       const thSol = randInt(25, 65);
@@ -1116,6 +1397,7 @@
 
     // --- FIRE, REPLAY, COMPARE & DEMO CONTROLS ---
     window.fireCannon = function(isReplay = false) {
+      closeVictoryModal();
       if (!isReplay) {
         const keepPrev = document.getElementById('chkCompare').checked;
         if (keepPrev && state.lastShotParams) {
@@ -1191,6 +1473,7 @@
     };
 
     window.resetShot = function() {
+      closeVictoryModal();
       sfx.stopFlightSound();
       state.isFlying = false;
       state.flightTime = 0;
@@ -1276,7 +1559,7 @@
       }
     };
 
-    // --- EVALUATE SHOT & GENERATE PHYSICS FEEDBACK ---
+    // --- EVALUATE SHOT, TRIGGER CRACKERS & SHOW VICTORY MODAL ---
     function finishShotAndEvaluate() {
       const { theta, v0, y0, kin } = state.lastShotParams;
 
@@ -1332,9 +1615,21 @@
         badge.className = 'status-badge pass';
         badge.textContent = '✅ Mission Complete!';
         state.solvedCount++;
-        document.getElementById('streakCounter').textContent = `Solved: ${state.solvedCount}`;
+        document.getElementById('streakCounter').textContent = `⭐ Level ${state.level} (Solved: ${state.solvedCount})`;
         exp.textContent = `Great shot! R = ${kin.R.toFixed(1)} m, H = ${kin.HMax.toFixed(1)} m, T = ${kin.T.toFixed(2)} s. ${changeNote}`;
         targetRing.material.color.setHex(0x4ade80);
+
+        // Trigger 3D Crackers + 2D Confetti + Victory Level-Up Modal!
+        spawn3DFireworks(kin.R);
+        spawnConfetti2D();
+
+        document.getElementById('vicLevelBadge').textContent = `🏆 Level ${state.level} Cleared!`;
+        document.getElementById('vicR').textContent = `${kin.R.toFixed(1)} m`;
+        document.getElementById('vicH').textContent = `${kin.HMax.toFixed(1)} m`;
+        document.getElementById('vicT').textContent = `${kin.T.toFixed(2)} s`;
+        document.getElementById('vicMessage').textContent =
+          `With θ = ${theta}°, v₀ = ${v0.toFixed(1)} m/s, and y₀ = ${y0} m, your projectile hit the target and satisfied every physics condition!`;
+        document.getElementById('victoryModal').style.display = 'flex';
       } else if (res.rangeOk && !res.otherOk) {
         badge.className = 'status-badge warn';
         badge.textContent = '⚠️ Target Hit — Condition Failed';
@@ -1413,6 +1708,8 @@
         }
       }
 
+      update3DFireworks(dtReal);
+      updateConfetti2D(dtReal);
       controls.update();
       updateCannonFloatingBadge();
       renderer.render(scene, camera);
@@ -1422,6 +1719,8 @@
       const w = canvas.parentElement.clientWidth;
       const h = canvas.parentElement.clientHeight;
       renderer.setSize(w, h);
+      confettiCanvas.width = w;
+      confettiCanvas.height = h;
       camera.aspect = w / h;
       camera.updateProjectionMatrix();
     }
